@@ -1,0 +1,514 @@
+2026-03-13 17:51:43,301 - aqt.main - INFO - installer 2544 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:51:43,302 - aqt.helper - DEBUG - helper 2544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 17:51:54,641 - aqt.helper - DEBUG - helper 2544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:51:55,947 - aqt.archives - INFO - archives 2544 Found extension qtwebengine
+2026-03-13 17:51:55,947 - aqt.helper - DEBUG - helper 2544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:51:57,195 - aqt.archives - INFO - archives 2544 Found extension qtpdf
+2026-03-13 17:51:58,242 - aqt.helper - DEBUG - helper 23436 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:51:58,264 - aqt.helper - DEBUG - helper 18476 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:51:58,264 - aqt.helper - DEBUG - helper 29580 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:51:58,274 - aqt.helper - DEBUG - helper 24620 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:52:09,396 - aqt.helper - INFO - helper 23436 Downloading qtimageformats...
+2026-03-13 17:52:09,396 - aqt.helper - INFO - helper 18476 Downloading qtbase...
+2026-03-13 17:52:09,397 - aqt.helper - INFO - helper 29580 Downloading qtsvg...
+2026-03-13 17:52:09,397 - aqt.helper - INFO - helper 24620 Downloading qtdeclarative...
+2026-03-13 17:52:09,397 - aqt.installer - DEBUG - installer 23436 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:09,397 - aqt.installer - DEBUG - installer 18476 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:09,397 - aqt.installer - DEBUG - installer 29580 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:09,397 - aqt.installer - DEBUG - installer 24620 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:10,552 - aqt.helper - DEBUG - helper 18476 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+ws-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:10,552 - aqt.helper - INFO - helper 18476 Redirected: ftp.fau.de
+2026-03-13 17:52:10,552 - aqt.helper - DEBUG - helper 29580 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:10,553 - aqt.helper - INFO - helper 29580 Redirected: ftp.fau.de
+2026-03-13 17:52:10,576 - aqt.helper - DEBUG - helper 24620 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:10,576 - aqt.helper - INFO - helper 24620 Redirected: ftp.fau.de
+2026-03-13 17:52:22,589 - aqt.installer - INFO - installer 29580 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.33057210
+2026-03-13 17:52:22,613 - aqt.helper - DEBUG - helper 29580 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:52:22,798 - aqt.installer - INFO - installer 23436 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.56161340
+2026-03-13 17:52:22,834 - aqt.helper - DEBUG - helper 23436 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:52:33,653 - aqt.helper - INFO - helper 29580 Downloading qttools...
+2026-03-13 17:52:33,653 - aqt.installer - DEBUG - installer 29580 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:33,684 - aqt.helper - INFO - helper 23436 Downloading qttranslations...
+2026-03-13 17:52:33,684 - aqt.installer - DEBUG - installer 23436 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:34,636 - aqt.helper - DEBUG - helper 29580 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:34,636 - aqt.helper - INFO - helper 29580 Redirected: ftp.fau.de
+2026-03-13 17:52:34,670 - aqt.helper - DEBUG - helper 23436 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:52:34,670 - aqt.helper - INFO - helper 23436 Redirected: ftp.fau.de
+2026-03-13 17:52:48,127 - aqt.installer - INFO - installer 23436 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 25.30248820
+2026-03-13 17:52:48,161 - aqt.helper - DEBUG - helper 23436 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z.sha256
+2026-03-13 17:52:52,099 - aqt.helper - DEBUG - helper 18476 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z.sha256
+2026-03-13 17:52:58,956 - aqt.helper - INFO - helper 18476 Downloading opengl32sw...
+2026-03-13 17:52:58,957 - aqt.installer - DEBUG - installer 18476 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:52:58,963 - aqt.helper - INFO - helper 23436 Downloading d3dcompiler_47...
+2026-03-13 17:52:58,963 - aqt.installer - DEBUG - installer 23436 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:52:59,685 - aqt.helper - DEBUG - helper 18476 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:52:59,685 - aqt.helper - INFO - helper 18476 Redirected: ftp.fau.de
+2026-03-13 17:52:59,708 - aqt.helper - DEBUG - helper 23436 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:52:59,708 - aqt.helper - INFO - helper 23436 Redirected: ftp.fau.de
+2026-03-13 17:53:01,546 - aqt.installer - INFO - installer 29580 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 38.93794820
+2026-03-13 17:53:10,715 - aqt.installer - INFO - installer 23436 Finished installation of d3dcompiler_47-x64.7z in 22.56508110
+2026-03-13 17:53:12,729 - aqt.installer - INFO - installer 18476 Finished installation of opengl32sw-64-mesa_11_2_2-signed_sha256.7z in 20.63719110
+2026-03-13 17:53:12,747 - aqt.installer - WARNING - installer 2544 Caught ArchiveDownloadError, terminating installer workers
+2026-03-13 17:53:12,818 - aqt.main - ERROR - installer 2544 Download of 6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z has error: ('Connection broken: IncompleteRead(38303880 bytes read, 3983743 more expected)', IncompleteRead(38303880 bytes read, 3983743 more expected))
+2026-03-13 17:53:19,208 - aqt.main - INFO - installer 23824 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:53:19,209 - aqt.helper - DEBUG - helper 23824 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 17:53:30,457 - aqt.helper - DEBUG - helper 23824 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:53:31,521 - aqt.archives - INFO - archives 23824 Found extension qtwebengine
+2026-03-13 17:53:31,521 - aqt.helper - DEBUG - helper 23824 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:53:32,722 - aqt.archives - INFO - archives 23824 Found extension qtpdf
+2026-03-13 17:53:33,700 - aqt.helper - DEBUG - helper 36636 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:53:33,701 - aqt.helper - DEBUG - helper 29364 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:53:33,717 - aqt.helper - DEBUG - helper 43888 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:53:33,724 - aqt.helper - DEBUG - helper 27804 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:53:34,520 - aqt.helper - INFO - helper 29364 Downloading qtbase...
+2026-03-13 17:53:34,520 - aqt.installer - DEBUG - installer 29364 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:34,591 - aqt.helper - INFO - helper 43888 Downloading qtsvg...
+2026-03-13 17:53:34,592 - aqt.helper - INFO - helper 27804 Downloading qtdeclarative...
+2026-03-13 17:53:34,592 - aqt.helper - INFO - helper 36636 Downloading qtimageformats...
+2026-03-13 17:53:34,591 - aqt.installer - DEBUG - installer 43888 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:34,592 - aqt.installer - DEBUG - installer 27804 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:34,592 - aqt.installer - DEBUG - installer 36636 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:45,319 - aqt.helper - DEBUG - helper 27804 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:45,319 - aqt.helper - INFO - helper 27804 Redirected: ftp.fau.de
+2026-03-13 17:53:45,328 - aqt.helper - DEBUG - helper 29364 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:45,329 - aqt.helper - INFO - helper 29364 Redirected: ftp.fau.de
+2026-03-13 17:53:45,360 - aqt.helper - DEBUG - helper 36636 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:45,360 - aqt.helper - INFO - helper 36636 Redirected: ftp.fau.de
+2026-03-13 17:53:45,361 - aqt.helper - DEBUG - helper 43888 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:53:45,361 - aqt.helper - INFO - helper 43888 Redirected: ftp.fau.de
+2026-03-13 17:53:56,482 - aqt.installer - INFO - installer 43888 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 22.78594280
+2026-03-13 17:53:56,494 - aqt.helper - DEBUG - helper 43888 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:53:57,050 - aqt.installer - INFO - installer 36636 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.35558500
+2026-03-13 17:53:57,065 - aqt.helper - DEBUG - helper 36636 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:54:07,289 - aqt.helper - INFO - helper 36636 Downloading qttranslations...
+2026-03-13 17:54:07,289 - aqt.installer - DEBUG - installer 36636 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:54:07,292 - aqt.helper - INFO - helper 43888 Downloading qttools...
+2026-03-13 17:54:07,292 - aqt.installer - DEBUG - installer 43888 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:54:08,017 - aqt.helper - DEBUG - helper 43888 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:54:08,017 - aqt.helper - INFO - helper 43888 Redirected: ftp.fau.de
+2026-03-13 17:54:08,046 - aqt.helper - DEBUG - helper 36636 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:54:08,046 - aqt.helper - INFO - helper 36636 Redirected: ftp.fau.de
+2026-03-13 17:54:21,742 - aqt.installer - INFO - installer 36636 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.68063780
+2026-03-13 17:54:21,762 - aqt.helper - DEBUG - helper 36636 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z.sha256
+2026-03-13 17:54:24,786 - aqt.installer - INFO - installer 29364 Finished installation of qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 51.09117410
+2026-03-13 17:54:24,811 - aqt.helper - DEBUG - helper 29364 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z.sha256
+2026-03-13 17:54:32,554 - aqt.helper - INFO - helper 29364 Downloading opengl32sw...
+2026-03-13 17:54:32,554 - aqt.installer - DEBUG - installer 29364 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:54:32,560 - aqt.helper - INFO - helper 36636 Downloading d3dcompiler_47...
+2026-03-13 17:54:32,560 - aqt.installer - DEBUG - installer 36636 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:54:33,238 - aqt.helper - DEBUG - helper 29364 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:54:33,238 - aqt.helper - INFO - helper 29364 Redirected: ftp.fau.de
+2026-03-13 17:54:33,238 - aqt.helper - DEBUG - helper 36636 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:54:33,238 - aqt.helper - INFO - helper 36636 Redirected: ftp.fau.de
+2026-03-13 17:54:34,601 - aqt.installer - INFO - installer 43888 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 38.11061760
+2026-03-13 17:54:44,524 - aqt.installer - INFO - installer 36636 Finished installation of d3dcompiler_47-x64.7z in 22.76715100
+2026-03-13 17:54:46,433 - aqt.installer - INFO - installer 29364 Finished installation of opengl32sw-64-mesa_11_2_2-signed_sha256.7z in 21.62772480
+2026-03-13 17:54:46,441 - aqt.installer - WARNING - installer 23824 Caught ArchiveDownloadError, terminating installer workers
+2026-03-13 17:54:46,472 - aqt.main - ERROR - installer 23824 Download of 6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z has error: ('Connection broken: IncompleteRead(65431879 bytes read, 86076551 more expected)', IncompleteRead(65431879 bytes read, 86076551 more expected))
+2026-03-13 17:54:52,739 - aqt.main - INFO - installer 15584 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:54:52,739 - aqt.helper - DEBUG - helper 15584 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 17:55:03,996 - aqt.helper - DEBUG - helper 15584 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:55:05,132 - aqt.archives - INFO - archives 15584 Found extension qtwebengine
+2026-03-13 17:55:05,132 - aqt.helper - DEBUG - helper 15584 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:55:06,280 - aqt.archives - INFO - archives 15584 Found extension qtpdf
+2026-03-13 17:55:07,186 - aqt.helper - DEBUG - helper 30500 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:07,201 - aqt.helper - DEBUG - helper 27720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:07,223 - aqt.helper - DEBUG - helper 38332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:07,245 - aqt.helper - DEBUG - helper 17936 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:18,110 - aqt.helper - INFO - helper 30500 Downloading qtimageformats...
+2026-03-13 17:55:18,110 - aqt.installer - DEBUG - installer 30500 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:18,133 - aqt.helper - INFO - helper 38332 Downloading qtsvg...
+2026-03-13 17:55:18,133 - aqt.installer - DEBUG - installer 38332 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:18,143 - aqt.helper - INFO - helper 27720 Downloading qtbase...
+2026-03-13 17:55:18,143 - aqt.installer - DEBUG - installer 27720 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:18,149 - aqt.helper - INFO - helper 17936 Downloading qtdeclarative...
+2026-03-13 17:55:18,149 - aqt.installer - DEBUG - installer 17936 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:19,244 - aqt.helper - DEBUG - helper 30500 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:19,244 - aqt.helper - INFO - helper 30500 Redirected: ftp.fau.de
+2026-03-13 17:55:19,272 - aqt.helper - DEBUG - helper 17936 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:19,272 - aqt.helper - INFO - helper 17936 Redirected: ftp.fau.de
+2026-03-13 17:55:19,292 - aqt.helper - DEBUG - helper 27720 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:19,292 - aqt.helper - INFO - helper 27720 Redirected: ftp.fau.de
+2026-03-13 17:55:19,311 - aqt.helper - DEBUG - helper 38332 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:19,311 - aqt.helper - INFO - helper 38332 Redirected: ftp.fau.de
+2026-03-13 17:55:31,513 - aqt.installer - INFO - installer 38332 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.29429340
+2026-03-13 17:55:31,549 - aqt.helper - DEBUG - helper 38332 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:32,100 - aqt.installer - INFO - installer 30500 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.92041980
+2026-03-13 17:55:32,146 - aqt.helper - DEBUG - helper 30500 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:55:42,455 - aqt.helper - INFO - helper 30500 Downloading qttranslations...
+2026-03-13 17:55:42,455 - aqt.installer - DEBUG - installer 30500 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:42,480 - aqt.helper - INFO - helper 38332 Downloading qttools...
+2026-03-13 17:55:42,480 - aqt.installer - DEBUG - installer 38332 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:43,448 - aqt.helper - DEBUG - helper 30500 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:43,448 - aqt.helper - INFO - helper 30500 Redirected: ftp.fau.de
+2026-03-13 17:55:43,459 - aqt.helper - DEBUG - helper 38332 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:55:43,460 - aqt.helper - INFO - helper 38332 Redirected: ftp.fau.de
+2026-03-13 17:55:56,874 - aqt.installer - INFO - installer 30500 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.73618940
+2026-03-13 17:55:56,912 - aqt.helper - DEBUG - helper 30500 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z.sha256
+2026-03-13 17:56:00,867 - aqt.helper - DEBUG - helper 27720 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z.sha256
+2026-03-13 17:56:07,717 - aqt.helper - INFO - helper 30500 Downloading d3dcompiler_47...
+2026-03-13 17:56:07,718 - aqt.installer - DEBUG - installer 30500 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:56:07,720 - aqt.helper - INFO - helper 27720 Downloading opengl32sw...
+2026-03-13 17:56:07,720 - aqt.installer - DEBUG - installer 27720 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:56:08,432 - aqt.helper - DEBUG - helper 27720 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:56:08,432 - aqt.helper - INFO - helper 27720 Redirected: ftp.fau.de
+2026-03-13 17:56:08,472 - aqt.helper - DEBUG - helper 30500 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:56:08,472 - aqt.helper - INFO - helper 30500 Redirected: ftp.fau.de
+2026-03-13 17:56:09,343 - aqt.installer - INFO - installer 38332 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 37.80322130
+2026-03-13 17:56:19,445 - aqt.installer - INFO - installer 30500 Finished installation of d3dcompiler_47-x64.7z in 22.54308270
+2026-03-13 17:56:21,553 - aqt.installer - INFO - installer 27720 Finished installation of opengl32sw-64-mesa_11_2_2-signed_sha256.7z in 20.69508450
+2026-03-13 17:56:21,565 - aqt.installer - WARNING - installer 15584 Caught ArchiveDownloadError, terminating installer workers
+2026-03-13 17:56:21,600 - aqt.main - ERROR - installer 15584 Download of 6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z has error: ('Connection broken: IncompleteRead(41127880 bytes read, 1159743 more expected)', IncompleteRead(41127880 bytes read, 1159743 more expected))
+2026-03-13 17:56:30,277 - aqt.main - INFO - installer 17144 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:56:30,278 - aqt.helper - DEBUG - helper 17144 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 17:56:41,557 - aqt.helper - DEBUG - helper 17144 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:56:42,663 - aqt.archives - INFO - archives 17144 Found extension qtwebengine
+2026-03-13 17:56:42,664 - aqt.helper - DEBUG - helper 17144 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:56:43,800 - aqt.archives - INFO - archives 17144 Found extension qtpdf
+2026-03-13 17:56:44,643 - aqt.helper - DEBUG - helper 44632 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:56:44,653 - aqt.helper - DEBUG - helper 50404 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:56:44,659 - aqt.helper - DEBUG - helper 39020 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:56:44,670 - aqt.helper - DEBUG - helper 36884 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:56:45,383 - aqt.helper - INFO - helper 44632 Downloading qtimageformats...
+2026-03-13 17:56:45,384 - aqt.helper - INFO - helper 50404 Downloading qtbase...
+2026-03-13 17:56:45,384 - aqt.installer - DEBUG - installer 39020 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:45,384 - aqt.installer - DEBUG - installer 50404 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:45,384 - aqt.installer - DEBUG - installer 44632 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:45,421 - aqt.helper - INFO - helper 36884 Downloading qtdeclarative...
+2026-03-13 17:56:45,421 - aqt.installer - DEBUG - installer 36884 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:56,303 - aqt.helper - DEBUG - helper 36884 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtdeclarative-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:56,303 - aqt.helper - INFO - helper 36884 Redirected: ftp.fau.de
+2026-03-13 17:56:56,311 - aqt.helper - DEBUG - helper 50404 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:56,311 - aqt.helper - INFO - helper 50404 Redirected: ftp.fau.de
+2026-03-13 17:56:56,316 - aqt.helper - DEBUG - helper 44632 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:56,316 - aqt.helper - INFO - helper 44632 Redirected: ftp.fau.de
+2026-03-13 17:56:56,321 - aqt.helper - DEBUG - helper 39020 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:56:56,321 - aqt.helper - INFO - helper 39020 Redirected: ftp.fau.de
+2026-03-13 17:57:08,331 - aqt.installer - INFO - installer 44632 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.69371060
+2026-03-13 17:57:08,351 - aqt.helper - DEBUG - helper 44632 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:57:08,366 - aqt.installer - INFO - installer 39020 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.71202310
+2026-03-13 17:57:08,384 - aqt.helper - DEBUG - helper 39020 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:57:19,383 - aqt.helper - INFO - helper 39020 Downloading qttranslations...
+2026-03-13 17:57:19,383 - aqt.installer - DEBUG - installer 39020 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:57:19,413 - aqt.helper - INFO - helper 44632 Downloading qttools...
+2026-03-13 17:57:19,413 - aqt.installer - DEBUG - installer 44632 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:57:20,287 - aqt.helper - DEBUG - helper 39020 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:57:20,287 - aqt.helper - INFO - helper 39020 Redirected: ftp.fau.de
+2026-03-13 17:57:20,288 - aqt.helper - DEBUG - helper 44632 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:57:20,288 - aqt.helper - INFO - helper 44632 Redirected: ftp.fau.de
+2026-03-13 17:57:33,206 - aqt.installer - INFO - installer 39020 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.82589560
+2026-03-13 17:57:33,227 - aqt.helper - DEBUG - helper 39020 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z.sha256
+2026-03-13 17:57:38,394 - aqt.helper - DEBUG - helper 50404 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z.sha256
+2026-03-13 17:57:44,120 - aqt.helper - INFO - helper 50404 Downloading opengl32sw...
+2026-03-13 17:57:44,121 - aqt.installer - DEBUG - installer 50404 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:57:44,132 - aqt.helper - INFO - helper 39020 Downloading d3dcompiler_47...
+2026-03-13 17:57:44,133 - aqt.installer - DEBUG - installer 39020 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:57:44,865 - aqt.helper - DEBUG - helper 50404 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212opengl32sw-64-mesa_11_2_2-signed_sha256.7z
+2026-03-13 17:57:44,865 - aqt.helper - INFO - helper 50404 Redirected: ftp.fau.de
+2026-03-13 17:57:44,887 - aqt.helper - DEBUG - helper 39020 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212d3dcompiler_47-x64.7z
+2026-03-13 17:57:44,887 - aqt.helper - INFO - helper 39020 Redirected: ftp.fau.de
+2026-03-13 17:57:50,700 - aqt.installer - INFO - installer 44632 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 42.35232660
+2026-03-13 17:57:55,969 - aqt.installer - INFO - installer 39020 Finished installation of d3dcompiler_47-x64.7z in 22.74694240
+2026-03-13 17:57:58,840 - aqt.installer - INFO - installer 50404 Finished installation of opengl32sw-64-mesa_11_2_2-signed_sha256.7z in 20.45529590
+2026-03-13 17:57:58,855 - aqt.installer - WARNING - installer 17144 Caught ArchiveDownloadError, terminating installer workers
+2026-03-13 17:57:58,927 - aqt.main - ERROR - installer 17144 Download of 6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z has error: ('Connection broken: IncompleteRead(37207880 bytes read, 5079743 more expected)', IncompleteRead(37207880 bytes read, 5079743 more expected))
+2026-03-13 17:58:23,700 - aqt.main - INFO - installer 18544 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:58:23,700 - aqt.helper - DEBUG - helper 18544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 17:58:34,941 - aqt.helper - DEBUG - helper 18544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:58:36,106 - aqt.archives - INFO - archives 18544 Found extension qtwebengine
+2026-03-13 17:58:36,107 - aqt.helper - DEBUG - helper 18544 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 17:58:37,293 - aqt.archives - INFO - archives 18544 Found extension qtpdf
+2026-03-13 17:58:38,221 - aqt.helper - DEBUG - helper 23340 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:58:38,274 - aqt.helper - DEBUG - helper 43068 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:58:38,276 - aqt.helper - DEBUG - helper 31760 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:58:38,290 - aqt.helper - DEBUG - helper 50064 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:58:49,045 - aqt.helper - INFO - helper 31760 Downloading qtsvg...
+2026-03-13 17:58:49,047 - aqt.helper - INFO - helper 43068 Downloading qtbase...
+2026-03-13 17:58:49,046 - aqt.installer - DEBUG - installer 31760 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,047 - aqt.installer - DEBUG - installer 43068 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,055 - aqt.helper - INFO - helper 23340 Downloading qtimageformats...
+2026-03-13 17:58:49,055 - aqt.installer - DEBUG - installer 23340 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,070 - aqt.helper - INFO - helper 50064 Downloading qttools...
+2026-03-13 17:58:49,070 - aqt.installer - DEBUG - installer 50064 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,964 - aqt.helper - DEBUG - helper 31760 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,964 - aqt.helper - INFO - helper 31760 Redirected: ftp.fau.de
+2026-03-13 17:58:49,968 - aqt.helper - DEBUG - helper 43068 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,968 - aqt.helper - INFO - helper 43068 Redirected: ftp.fau.de
+2026-03-13 17:58:49,971 - aqt.helper - DEBUG - helper 23340 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,972 - aqt.helper - INFO - helper 23340 Redirected: ftp.fau.de
+2026-03-13 17:58:49,988 - aqt.helper - DEBUG - helper 50064 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:58:49,988 - aqt.helper - INFO - helper 50064 Redirected: ftp.fau.de
+2026-03-13 17:59:01,699 - aqt.installer - INFO - installer 23340 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.48468710
+2026-03-13 17:59:01,721 - aqt.helper - DEBUG - helper 23340 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 17:59:01,821 - aqt.installer - INFO - installer 31760 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.54948250
+2026-03-13 17:59:12,467 - aqt.helper - INFO - helper 23340 Downloading qttranslations...
+2026-03-13 17:59:12,467 - aqt.installer - DEBUG - installer 23340 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:59:13,114 - aqt.helper - DEBUG - helper 23340 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 17:59:13,115 - aqt.helper - INFO - helper 23340 Redirected: ftp.fau.de
+2026-03-13 17:59:17,888 - aqt.installer - INFO - installer 50064 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 39.60250660
+2026-03-13 17:59:25,116 - aqt.installer - INFO - installer 23340 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 23.40079850
+2026-03-13 17:59:26,030 - aqt.installer - INFO - installer 43068 Finished installation of qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 47.76063200
+2026-03-13 17:59:26,539 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\bin\qmake.exe
+2026-03-13 17:59:26,545 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Concurrent.prl
+2026-03-13 17:59:26,552 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Concurrentd.prl
+2026-03-13 17:59:26,557 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Core.prl
+2026-03-13 17:59:26,558 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Cored.prl
+2026-03-13 17:59:26,560 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DBus.prl
+2026-03-13 17:59:26,562 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DBusd.prl
+2026-03-13 17:59:26,563 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Designer.prl
+2026-03-13 17:59:26,565 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DesignerComponents.prl
+2026-03-13 17:59:26,566 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DesignerComponentsd.prl
+2026-03-13 17:59:26,567 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Designerd.prl
+2026-03-13 17:59:26,568 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DeviceDiscoverySupport.prl
+2026-03-13 17:59:26,569 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DeviceDiscoverySupportd.prl
+2026-03-13 17:59:26,571 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6EntryPoint.prl
+2026-03-13 17:59:26,572 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6EntryPointd.prl
+2026-03-13 17:59:26,573 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExampleIcons.prl
+2026-03-13 17:59:26,574 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExampleIconsd.prl
+2026-03-13 17:59:26,576 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExamplesAssetDownloader.prl
+2026-03-13 17:59:26,577 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExamplesAssetDownloaderd.prl
+2026-03-13 17:59:26,578 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6FbSupport.prl
+2026-03-13 17:59:26,580 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6FbSupportd.prl
+2026-03-13 17:59:26,581 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Gui.prl
+2026-03-13 17:59:26,582 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Guid.prl
+2026-03-13 17:59:26,583 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Help.prl
+2026-03-13 17:59:26,584 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Helpd.prl
+2026-03-13 17:59:26,585 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Network.prl
+2026-03-13 17:59:26,586 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Networkd.prl
+2026-03-13 17:59:26,587 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGL.prl
+2026-03-13 17:59:26,588 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLd.prl
+2026-03-13 17:59:26,589 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLWidgets.prl
+2026-03-13 17:59:26,590 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLWidgetsd.prl
+2026-03-13 17:59:26,591 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6PrintSupport.prl
+2026-03-13 17:59:26,592 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6PrintSupportd.prl
+2026-03-13 17:59:26,593 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Sql.prl
+2026-03-13 17:59:26,595 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Sqld.prl
+2026-03-13 17:59:26,596 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Svg.prl
+2026-03-13 17:59:26,597 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Svgd.prl
+2026-03-13 17:59:26,598 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6SvgWidgets.prl
+2026-03-13 17:59:26,599 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6SvgWidgetsd.prl
+2026-03-13 17:59:26,600 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Test.prl
+2026-03-13 17:59:26,602 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Testd.prl
+2026-03-13 17:59:26,603 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6UiTools.prl
+2026-03-13 17:59:26,604 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6UiToolsd.prl
+2026-03-13 17:59:26,605 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Widgets.prl
+2026-03-13 17:59:26,606 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Widgetsd.prl
+2026-03-13 17:59:26,607 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Xml.prl
+2026-03-13 17:59:26,608 - aqt.updater - INFO - updater 18544 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Xmld.prl
+2026-03-13 17:59:26,610 - aqt.main - INFO - installer 18544 Finished installation
+2026-03-13 17:59:26,610 - aqt.main - INFO - installer 18544 Time elapsed: 62.91029170 second
+2026-03-13 17:59:35,745 - aqt.main - INFO - installer 27884 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 17:59:35,746 - aqt.helper - DEBUG - helper 27884 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_opensslv3_x64/Updates.xml.sha256
+2026-03-13 17:59:47,055 - aqt.helper - DEBUG - helper 27884 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_opensslv3_x64/Updates.xml.sha256
+2026-03-13 17:59:48,888 - aqt.helper - DEBUG - helper 53888 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_opensslv3_x64/qt.tools.opensslv3.win_x64/3.0.16-1openssl_3.0.16_prebuild_x64.7z.sha256
+2026-03-13 17:59:49,475 - aqt.helper - INFO - helper 53888 Downloading qt.tools.opensslv3.win_x64...
+2026-03-13 17:59:49,475 - aqt.installer - DEBUG - installer 53888 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_opensslv3_x64/qt.tools.opensslv3.win_x64/3.0.16-1openssl_3.0.16_prebuild_x64.7z
+2026-03-13 17:59:50,075 - aqt.helper - DEBUG - helper 53888 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/tools_opensslv3_x64/qt.tools.opensslv3.win_x64/3.0.16-1openssl_3.0.16_prebuild_x64.7z
+2026-03-13 17:59:50,075 - aqt.helper - INFO - helper 53888 Redirected: ftp.fau.de
+2026-03-13 18:00:03,762 - aqt.installer - INFO - installer 53888 Finished installation of openssl_3.0.16_prebuild_x64.7z in 14.88102360
+2026-03-13 18:00:03,919 - aqt.main - INFO - installer 27884 Finished installation
+2026-03-13 18:00:03,919 - aqt.main - INFO - installer 27884 Time elapsed: 28.17392900 second
+2026-03-13 18:03:12,057 - aqt.helper - DEBUG - helper 36196 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 18:03:34,484 - aqt.main - INFO - installer 23512 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 18:03:34,484 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 18:03:46,053 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/mingw/Updates.xml.sha256
+2026-03-13 18:03:46,805 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/mingw/Updates.xml.sha256
+2026-03-13 18:03:47,504 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/mingw/Updates.xml.sha256
+2026-03-13 18:03:48,226 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/mingw/Updates.xml.sha256
+2026-03-13 18:03:48,982 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/mingw/Updates.xml.sha256
+2026-03-13 18:03:49,687 - aqt.helper - DEBUG - helper 23512 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/mingw/Updates.xml.sha256
+2026-03-13 18:04:01,311 - aqt.archives - INFO - archives 23512 Found extension qtpdf
+2026-03-13 18:04:02,597 - aqt.helper - DEBUG - helper 47960 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z.sha256
+ows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:04:02,638 - aqt.helper - DEBUG - helper 38264 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:04:02,653 - aqt.helper - DEBUG - helper 9980 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:04:03,708 - aqt.helper - INFO - helper 52560 Downloading qtimageformats...
+2026-03-13 18:04:03,711 - aqt.helper - INFO - helper 9980 Downloading qttools...
+2026-03-13 18:04:03,708 - aqt.installer - DEBUG - installer 52560 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_mingw/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:03,716 - aqt.helper - INFO - helper 47960 Downloading qtbase...
+2026-03-13 18:04:03,712 - aqt.installer - DEBUG - installer 9980 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:03,716 - aqt.installer - DEBUG - installer 47960 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:03,723 - aqt.helper - INFO - helper 38264 Downloading qtsvg...
+2026-03-13 18:04:03,724 - aqt.installer - DEBUG - installer 38264 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:04,845 - aqt.helper - DEBUG - helper 9980 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:04,846 - aqt.helper - INFO - helper 9980 Redirected: ftp.fau.de
+2026-03-13 18:04:04,868 - aqt.helper - DEBUG - helper 47960 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:04,868 - aqt.helper - INFO - helper 47960 Redirected: ftp.fau.de
+2026-03-13 18:04:04,879 - aqt.helper - DEBUG - helper 38264 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:04,879 - aqt.helper - INFO - helper 38264 Redirected: ftp.fau.de
+2026-03-13 18:04:04,894 - aqt.helper - DEBUG - helper 52560 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_mingw/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:04,894 - aqt.helper - INFO - helper 52560 Redirected: ftp.fau.de
+2026-03-13 18:04:16,377 - aqt.installer - INFO - installer 38264 Finished installation of qtsvg-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z in 13.75146670
+2026-03-13 18:04:16,405 - aqt.helper - DEBUG - helper 38264 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:04:16,591 - aqt.installer - INFO - installer 52560 Finished installation of qtimageformats-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z in 14.00979600
+2026-03-13 18:04:27,199 - aqt.helper - INFO - helper 38264 Downloading qttranslations...
+2026-03-13 18:04:27,199 - aqt.installer - DEBUG - installer 38264 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:27,922 - aqt.helper - DEBUG - helper 38264 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_mingw/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:04:27,922 - aqt.helper - INFO - helper 38264 Redirected: ftp.fau.de
+2026-03-13 18:04:35,058 - aqt.installer - INFO - installer 9980 Finished installation of qttools-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z in 32.41849580
+2026-03-13 18:04:38,922 - aqt.installer - INFO - installer 47960 Finished installation of qtbase-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z in 36.33550890
+2026-03-13 18:04:39,299 - aqt.installer - INFO - installer 38264 Finished installation of qttranslations-Windows-Windows_11_24H2-Mingw-Windows-Windows_11_24H2-X86_64.7z in 22.90234880
+2026-03-13 18:04:43,212 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Concurrent.pc
+2026-03-13 18:04:43,220 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Core.pc
+2026-03-13 18:04:43,225 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6DBus.pc
+2026-03-13 18:04:43,226 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Designer.pc
+2026-03-13 18:04:43,227 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Gui.pc
+2026-03-13 18:04:43,229 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Help.pc
+2026-03-13 18:04:43,230 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Linguist.pc
+2026-03-13 18:04:43,232 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Network.pc
+2026-03-13 18:04:43,233 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6OpenGL.pc
+2026-03-13 18:04:43,234 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6OpenGLWidgets.pc
+2026-03-13 18:04:43,235 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Platform.pc
+2026-03-13 18:04:43,235 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6PrintSupport.pc
+2026-03-13 18:04:43,236 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Sql.pc
+2026-03-13 18:04:43,237 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Svg.pc
+2026-03-13 18:04:43,238 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6SvgWidgets.pc
+2026-03-13 18:04:43,239 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Test.pc
+2026-03-13 18:04:43,240 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6UiPlugin.pc
+2026-03-13 18:04:43,241 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6UiTools.pc
+2026-03-13 18:04:43,242 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Widgets.pc
+2026-03-13 18:04:43,243 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\pkgconfig\Qt6Xml.pc
+2026-03-13 18:04:43,244 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Concurrent.prl
+2026-03-13 18:04:43,246 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Core.prl
+2026-03-13 18:04:43,248 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6DBus.prl
+2026-03-13 18:04:43,249 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Designer.prl
+2026-03-13 18:04:43,250 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6DesignerComponents.prl
+2026-03-13 18:04:43,251 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6DeviceDiscoverySupport.prl
+2026-03-13 18:04:43,252 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6EntryPoint.prl
+2026-03-13 18:04:43,253 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6ExampleIcons.prl
+2026-03-13 18:04:43,254 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6ExamplesAssetDownloader.prl
+2026-03-13 18:04:43,255 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6FbSupport.prl
+2026-03-13 18:04:43,256 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Gui.prl
+2026-03-13 18:04:43,257 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Help.prl
+2026-03-13 18:04:43,258 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Network.prl
+2026-03-13 18:04:43,259 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6OpenGL.prl
+2026-03-13 18:04:43,259 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6OpenGLWidgets.prl
+2026-03-13 18:04:43,260 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6PrintSupport.prl
+2026-03-13 18:04:43,262 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Sql.prl
+2026-03-13 18:04:43,263 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Svg.prl
+2026-03-13 18:04:43,264 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6SvgWidgets.prl
+2026-03-13 18:04:43,266 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Test.prl
+2026-03-13 18:04:43,267 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6UiTools.prl
+2026-03-13 18:04:43,268 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Widgets.prl
+2026-03-13 18:04:43,268 - aqt.updater - INFO - updater 23512 Patching E:\Qt\6.10.2\mingw_64\lib\Qt6Xml.prl
+2026-03-13 18:04:43,270 - aqt.main - INFO - installer 23512 Finished installation
+2026-03-13 18:04:43,270 - aqt.main - INFO - installer 23512 Time elapsed: 68.78651100 second
+2026-03-13 18:04:50,546 - aqt.main - INFO - installer 29864 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 18:04:50,546 - aqt.helper - DEBUG - helper 29864 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/Updates.xml.sha256
+2026-03-13 18:05:01,775 - aqt.helper - DEBUG - helper 29864 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/Updates.xml.sha256
+2026-03-13 18:05:03,445 - aqt.helper - DEBUG - helper 14448 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/qt.tools.win64_mingw1310/13.1.0-202407240918mingw1310.7z.sha256
+2026-03-13 18:05:03,973 - aqt.helper - INFO - helper 14448 Downloading qt.tools.win64_mingw1310...
+2026-03-13 18:05:03,973 - aqt.installer - DEBUG - installer 14448 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/qt.tools.win64_mingw1310/13.1.0-202407240918mingw1310.7z
+2026-03-13 18:05:04,537 - aqt.helper - DEBUG - helper 14448 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/tools_mingw1310/qt.tools.win64_mingw1310/13.1.0-202407240918mingw1310.7z
+2026-03-13 18:05:04,537 - aqt.helper - INFO - helper 14448 Redirected: ftp.fau.de
+2026-03-13 18:06:06,486 - aqt.installer - INFO - installer 14448 Finished installation of mingw1310.7z in 63.05458000
+2026-03-13 18:06:06,690 - aqt.main - INFO - installer 29864 Finished installation
+2026-03-13 18:06:06,690 - aqt.main - INFO - installer 29864 Time elapsed: 76.14409890 second
+2026-03-13 18:07:23,275 - aqt.main - INFO - installer 47936 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 18:07:23,276 - aqt.helper - DEBUG - helper 47936 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/Updates.xml.sha256
+2026-03-13 18:07:35,562 - aqt.helper - DEBUG - helper 47936 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtwebengine/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 18:07:37,778 - aqt.archives - INFO - archives 47936 Found extension qtwebengine
+2026-03-13 18:07:37,778 - aqt.helper - DEBUG - helper 47936 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/extensions/qtpdf/6102/msvc2022_64/Updates.xml.sha256
+2026-03-13 18:07:38,985 - aqt.archives - INFO - archives 47936 Found extension qtpdf
+2026-03-13 18:07:39,863 - aqt.helper - DEBUG - helper 23468 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:07:39,891 - aqt.helper - DEBUG - helper 15904 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:07:39,908 - aqt.helper - DEBUG - helper 26160 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:07:39,920 - aqt.helper - DEBUG - helper 1328 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:07:51,711 - aqt.helper - INFO - helper 26160 Downloading qtsvg...
+2026-03-13 18:07:51,712 - aqt.installer - DEBUG - installer 26160 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:51,721 - aqt.helper - INFO - helper 1328 Downloading qttools...
+2026-03-13 18:07:51,721 - aqt.installer - DEBUG - installer 1328 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:51,732 - aqt.helper - INFO - helper 15904 Downloading qtbase...
+2026-03-13 18:07:51,732 - aqt.installer - DEBUG - installer 15904 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:51,739 - aqt.helper - INFO - helper 23468 Downloading qtimageformats...
+2026-03-13 18:07:51,739 - aqt.installer - DEBUG - installer 23468 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:52,672 - aqt.helper - DEBUG - helper 1328 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:52,672 - aqt.helper - INFO - helper 1328 Redirected: ftp.fau.de
+2026-03-13 18:07:52,691 - aqt.helper - DEBUG - helper 26160 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:52,691 - aqt.helper - INFO - helper 26160 Redirected: ftp.fau.de
+2026-03-13 18:07:52,699 - aqt.helper - DEBUG - helper 15904 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:52,700 - aqt.helper - INFO - helper 15904 Redirected: ftp.fau.de
+2026-03-13 18:07:52,713 - aqt.helper - DEBUG - helper 23468 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.addons.qtimageformats.win64_msvc2022_64/6.10.2-0-202601261212qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:07:52,713 - aqt.helper - INFO - helper 23468 Redirected: ftp.fau.de
+2026-03-13 18:08:05,117 - aqt.installer - INFO - installer 23468 Finished installation of qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 25.26429750
+2026-03-13 18:08:05,136 - aqt.helper - DEBUG - helper 23468 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z.sha256
+2026-03-13 18:08:05,235 - aqt.installer - INFO - installer 26160 Finished installation of qtsvg-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 25.33713550
+2026-03-13 18:08:16,866 - aqt.helper - INFO - helper 23468 Downloading qttranslations...
+2026-03-13 18:08:16,867 - aqt.installer - DEBUG - installer 23468 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:08:17,567 - aqt.installer - INFO - installer 1328 Finished installation of qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 37.65620820
+2026-03-13 18:08:17,579 - aqt.helper - DEBUG - helper 23468 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/qt6_6102/qt6_6102/qt.qt6.6102.win64_msvc2022_64/6.10.2-0-202601261212qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z
+2026-03-13 18:08:17,579 - aqt.helper - INFO - helper 23468 Redirected: ftp.fau.de
+2026-03-13 18:08:28,573 - aqt.installer - INFO - installer 15904 Finished installation of qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 48.69175040
+2026-03-13 18:08:29,983 - aqt.installer - INFO - installer 23468 Finished installation of qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z in 24.85138320
+2026-03-13 18:08:30,420 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\bin\qmake.exe
+2026-03-13 18:08:30,425 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Concurrent.prl
+2026-03-13 18:08:30,430 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Concurrentd.prl
+2026-03-13 18:08:30,435 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Core.prl
+2026-03-13 18:08:30,436 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Cored.prl
+2026-03-13 18:08:30,437 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DBus.prl
+2026-03-13 18:08:30,438 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DBusd.prl
+2026-03-13 18:08:30,439 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Designer.prl
+2026-03-13 18:08:30,440 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DesignerComponents.prl
+2026-03-13 18:08:30,441 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DesignerComponentsd.prl
+2026-03-13 18:08:30,441 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Designerd.prl
+2026-03-13 18:08:30,442 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DeviceDiscoverySupport.prl
+2026-03-13 18:08:30,443 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6DeviceDiscoverySupportd.prl
+2026-03-13 18:08:30,444 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6EntryPoint.prl
+2026-03-13 18:08:30,445 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6EntryPointd.prl
+2026-03-13 18:08:30,446 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExampleIcons.prl
+2026-03-13 18:08:30,447 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExampleIconsd.prl
+2026-03-13 18:08:30,448 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExamplesAssetDownloader.prl
+2026-03-13 18:08:30,448 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6ExamplesAssetDownloaderd.prl
+2026-03-13 18:08:30,449 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6FbSupport.prl
+2026-03-13 18:08:30,450 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6FbSupportd.prl
+2026-03-13 18:08:30,451 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Gui.prl
+2026-03-13 18:08:30,452 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Guid.prl
+2026-03-13 18:08:30,453 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Help.prl
+2026-03-13 18:08:30,454 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Helpd.prl
+2026-03-13 18:08:30,455 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Network.prl
+2026-03-13 18:08:30,456 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Networkd.prl
+2026-03-13 18:08:30,456 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGL.prl
+2026-03-13 18:08:30,457 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLd.prl
+2026-03-13 18:08:30,458 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLWidgets.prl
+2026-03-13 18:08:30,459 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6OpenGLWidgetsd.prl
+2026-03-13 18:08:30,460 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6PrintSupport.prl
+2026-03-13 18:08:30,461 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6PrintSupportd.prl
+2026-03-13 18:08:30,462 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Sql.prl
+2026-03-13 18:08:30,463 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Sqld.prl
+2026-03-13 18:08:30,464 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Svg.prl
+2026-03-13 18:08:30,465 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Svgd.prl
+2026-03-13 18:08:30,466 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6SvgWidgets.prl
+2026-03-13 18:08:30,467 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6SvgWidgetsd.prl
+2026-03-13 18:08:30,468 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Test.prl
+2026-03-13 18:08:30,469 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Testd.prl
+2026-03-13 18:08:30,470 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6UiTools.prl
+2026-03-13 18:08:30,470 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6UiToolsd.prl
+2026-03-13 18:08:30,471 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Widgets.prl
+2026-03-13 18:08:30,472 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Widgetsd.prl
+2026-03-13 18:08:30,473 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Xml.prl
+2026-03-13 18:08:30,474 - aqt.updater - INFO - updater 47936 Patching E:\Qt\6.10.2\msvc2022_64\lib\Qt6Xmld.prl
+2026-03-13 18:08:30,476 - aqt.main - INFO - installer 47936 Finished installation
+2026-03-13 18:08:30,476 - aqt.main - INFO - installer 47936 Time elapsed: 67.20093980 second
+2026-03-13 18:08:56,736 - aqt.main - INFO - installer 14980 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 18:08:56,737 - aqt.helper - DEBUG - helper 14980 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_cmake/Updates.xml.sha256
+2026-03-13 18:09:10,242 - aqt.helper - DEBUG - helper 14980 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_cmake/Updates.xml.sha256
+2026-03-13 18:09:12,026 - aqt.helper - DEBUG - helper 6840 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_cmake/qt.tools.cmake/3.30.5-202502251255windows64_x64_cmake_tools.7z.sha256
+2026-03-13 18:09:12,646 - aqt.helper - INFO - helper 6840 Downloading qt.tools.cmake...
+2026-03-13 18:09:12,647 - aqt.installer - DEBUG - installer 6840 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_cmake/qt.tools.cmake/3.30.5-202502251255windows64_x64_cmake_tools.7z
+2026-03-13 18:09:24,321 - aqt.helper - DEBUG - helper 6840 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/tools_cmake/qt.tools.cmake/3.30.5-202502251255windows64_x64_cmake_tools.7z
+2026-03-13 18:09:24,321 - aqt.helper - INFO - helper 6840 Redirected: ftp.fau.de
+2026-03-13 18:09:53,670 - aqt.installer - INFO - installer 6840 Finished installation of windows64_x64_cmake_tools.7z in 41.66072770
+2026-03-13 18:09:53,836 - aqt.main - INFO - installer 14980 Finished installation
+2026-03-13 18:09:53,836 - aqt.main - INFO - installer 14980 Time elapsed: 57.09971040 second
+2026-03-13 18:09:59,171 - aqt.main - INFO - installer 16156 aqtinstall(aqt) v3.3.0 on Python 3.13.11 [CPython MSC v.1944 64 bit (AMD64)]
+2026-03-13 18:09:59,172 - aqt.helper - DEBUG - helper 16156 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_ninja/Updates.xml.sha256
+2026-03-13 18:10:11,341 - aqt.helper - DEBUG - helper 16156 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_ninja/Updates.xml.sha256
+2026-03-13 18:10:14,257 - aqt.helper - DEBUG - helper 50240 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_ninja/qt.tools.ninja/1.12.1-202502251256ninja_win64.7z.sha256
+2026-03-13 18:10:15,027 - aqt.helper - INFO - helper 50240 Downloading qt.tools.ninja...
+2026-03-13 18:10:15,027 - aqt.installer - DEBUG - installer 50240 Download URL: https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/tools_ninja/qt.tools.ninja/1.12.1-202502251256ninja_win64.7z
+2026-03-13 18:10:15,853 - aqt.helper - DEBUG - helper 50240 Asked to redirect(302) to: https://ftp.fau.de/qtproject/online/qtsdkrepository/windows_x86/desktop/tools_ninja/qt.tools.ninja/1.12.1-202502251256ninja_win64.7z
+2026-03-13 18:10:15,853 - aqt.helper - INFO - helper 50240 Redirected: ftp.fau.de
+2026-03-13 18:10:27,469 - aqt.installer - INFO - installer 50240 Finished installation of ninja_win64.7z in 13.23058900
+2026-03-13 18:10:27,563 - aqt.main - INFO - installer 16156 Finished installation
+2026-03-13 18:10:27,563 - aqt.main - INFO - installer 16156 Time elapsed: 28.39160150 second

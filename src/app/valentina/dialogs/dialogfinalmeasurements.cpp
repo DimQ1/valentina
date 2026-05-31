@@ -268,7 +268,10 @@ void DialogFinalMeasurements::Add()
 {
     const int currentRow = ui->tableWidget->currentRow() + 1;
 
-    m_measurements.append({.name = tr("measurement"), .formula = "0"_L1});
+    auto item = decltype(m_measurements)::value_type{};
+    item.name = tr("measurement");
+    item.formula = "0"_L1;
+    m_measurements.append(item);
 
     UpdateTree();
     ui->tableWidget->selectRow(currentRow);

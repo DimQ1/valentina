@@ -3309,14 +3309,21 @@ auto VPMainWindow::PrepareLayoutTilePages(const QList<VPSheetPtr> &sheets) -> QV
     {
         if (m_layout->LayoutSettings().GetPrintTilesScheme())
         {
-            pages.append({.sheet = sheet, .tilesScheme = true});
+            VPLayoutPrinterPage item{};
+            item.sheet = sheet;
+            item.tilesScheme = true;
+            pages.append(item);
         }
 
         for (int row = 0; row < m_layout->TileFactory()->RowNb(sheet); row++) // for each row of the tiling grid
         {
             for (int col = 0; col < m_layout->TileFactory()->ColNb(sheet); col++) // for each column of tiling grid
             {
-                pages.append({.sheet = sheet, .tileRow = row, .tileCol = col});
+                VPLayoutPrinterPage item{};
+                item.sheet = sheet;
+                item.tileRow = row;
+                item.tileCol = col;
+                pages.append(item);
             }
         }
     }

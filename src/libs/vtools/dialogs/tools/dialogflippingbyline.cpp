@@ -313,7 +313,9 @@ void DialogFlippingByLine::SelectedObject(bool selected, quint32 object, quint32
         {
             if (obj == m_sourceObjects.cend())
             {
-                m_sourceObjects.append({.id = object});
+                SourceItem item{};
+                item.id = object;
+                m_sourceObjects.append(item);
             }
         }
         else

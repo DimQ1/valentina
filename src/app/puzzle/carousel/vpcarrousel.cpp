@@ -93,19 +93,25 @@ void VPCarrousel::Refresh()
 
     if (VPLayoutPtr const layout = m_layout.toStrongRef(); not layout.isNull())
     {
-        m_pieceLists.append(
-            {.unplaced = true, .active = false, .name = tr("Unplaced pieces"), .pieces = layout->GetUnplacedPieces()});
+        VPCarrouselSheet unplaced{};
+        unplaced.unplaced = true;
+        unplaced.active = false;
+        unplaced.name = tr("Unplaced pieces");
+        unplaced.pieces = layout->GetUnplacedPieces();
+        m_pieceLists.append(unplaced);
 
         QList<VPSheetPtr> const sheets = layout->GetSheets();
         for (const auto &sheet : sheets)
         {
             if (not sheet.isNull())
             {
-                m_pieceLists.append({.unplaced = false,
-                                     .active = (sheet == layout->GetFocusedSheet()),
-                                     .name = sheet->GetName(),
-                                     .pieces = sheet->GetPieces(),
-                                     .sheetUuid = sheet->Uuid()});
+                VPCarrouselSheet item{};
+                item.unplaced = false;
+                item.active = (sheet == layout->GetFocusedSheet());
+                item.name = sheet->GetName();
+                item.pieces = sheet->GetPieces();
+                item.sheetUuid = sheet->Uuid();
+                m_pieceLists.append(item);
             }
         }
 

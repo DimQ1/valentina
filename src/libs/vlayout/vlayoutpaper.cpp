@@ -299,8 +299,10 @@ auto VLayoutPaper::SaveResult(const VBestSquare &bestResult, const VLayoutPiece 
         d->globalContour.SetContour(newGContour);
 
         QVector<QPointF> const layoutPoints = workDetail.GetMappedLayoutAllowancePoints();
-        d->positionsCache.append({.boundingRect = VLayoutPiece::BoundingRect(layoutPoints),
-                                  .layoutAllowancePath = VGObject::PainterPath(layoutPoints)});
+        auto item = decltype(d->positionsCache)::value_type{};
+        item.boundingRect = VLayoutPiece::BoundingRect(layoutPoints);
+        item.layoutAllowancePath = VGObject::PainterPath(layoutPoints);
+        d->positionsCache.append(item);
 
 #ifdef LAYOUT_DEBUG
 #ifdef SHOW_BEST

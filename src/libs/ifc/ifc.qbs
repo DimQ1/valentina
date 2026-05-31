@@ -22,6 +22,11 @@ VLib {
                    buildconfig.conanXercesEnabled
     }
 
+    Properties {
+        condition: buildconfig.useConanPackages && buildconfig.conanXercesEnabled && qbs.toolchain.contains("gcc")
+        cpp.dynamicLibraries: ["xerces-c"]
+    }
+
     name: "IFCLib"
     files: [
         "ifcdef.h",
@@ -116,5 +121,10 @@ VLib {
                                               buildconfig.useConanPackages && buildconfig.conanXercesEnabled }
         Depends { name: "GraafLib" }
         cpp.includePaths: [exportingProduct.sourceDirectory]
+        Properties {
+            condition: buildconfig.useConanPackages && buildconfig.conanXercesEnabled &&
+                       qbs.toolchain.contains("gcc")
+            cpp.dynamicLibraries: ["xerces-c"]
+        }
     }
 }

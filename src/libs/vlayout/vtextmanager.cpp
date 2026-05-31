@@ -731,11 +731,13 @@ auto PrepareLines(const QVector<VLabelTemplateLine> &lines) -> QVector<TextLine>
     {
         if (not line.line.isEmpty())
         {
-            textLines.append({.qsText = line.line,
-                              .iFontSize = line.fontSizeIncrement,
-                              .bold = line.bold,
-                              .italic = line.italic,
-                              .eAlign = static_cast<Qt::Alignment>(line.alignment)});
+            TextLine item{};
+            item.qsText = line.line;
+            item.iFontSize = line.fontSizeIncrement;
+            item.bold = line.bold;
+            item.italic = line.italic;
+            item.eAlign = static_cast<Qt::Alignment>(line.alignment);
+            textLines.append(item);
         }
     }
 

@@ -183,9 +183,11 @@ auto DialogGraduatedCurve::GetOffsets() const -> QVector<VRawGraduatedCurveOffse
 
     for (const auto &formulaData : m_offsets)
     {
-        rawOffsets.append({.name = formulaData.name,
-                           .formula = formulaData.formula.GetFormula(FormulaType::ToSystem),
-                           .description = formulaData.description});
+        VRawGraduatedCurveOffset item{};
+        item.name = formulaData.name;
+        item.formula = formulaData.formula.GetFormula(FormulaType::ToSystem);
+        item.description = formulaData.description;
+        rawOffsets.append(item);
     }
 
     return rawOffsets;
@@ -547,7 +549,10 @@ void DialogGraduatedCurve::AddOffset()
     {
         currentRow = ui->tableWidget->rowCount();
 
-        rawOffsets.append({.name = name, .formula = "0"_L1});
+        VRawGraduatedCurveOffset item{};
+        item.name = name;
+        item.formula = "0"_L1;
+        rawOffsets.append(item);
     }
     else
     {
@@ -555,7 +560,10 @@ void DialogGraduatedCurve::AddOffset()
 
         if (currentRow >= 0 && currentRow <= rawOffsets.size())
         {
-            rawOffsets.insert(currentRow, {.name = name, .formula = "0"_L1});
+            VRawGraduatedCurveOffset item{};
+            item.name = name;
+            item.formula = "0"_L1;
+            rawOffsets.insert(currentRow, item);
         }
     }
 
@@ -941,9 +949,11 @@ auto DialogGraduatedCurve::VisualizationOffsets() const -> QVector<VRawGraduated
     toUserOffsets.reserve(m_offsets.size());
     for (const auto &offset : std::as_const(m_offsets))
     {
-        toUserOffsets.append({.name = offset.name,
-                              .formula = offset.formula.GetFormula(FormulaType::ToUser),
-                              .description = offset.description});
+        VRawGraduatedCurveOffset item{};
+        item.name = offset.name;
+        item.formula = offset.formula.GetFormula(FormulaType::ToUser);
+        item.description = offset.description;
+        toUserOffsets.append(item);
     }
     return toUserOffsets;
 }

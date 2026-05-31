@@ -471,7 +471,7 @@ void VPApplication::InitOptions()
                        []()
                        {
                            if (QString const country = VGAnalytics::CountryCode();
-                               country == "ru"_L1 || country == "by"_L1 || country == "ir"_L1)
+                               country == "by"_L1 || country == "ir"_L1)
                            {
                                QCoreApplication::exit();
                            }

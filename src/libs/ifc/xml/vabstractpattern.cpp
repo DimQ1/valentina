@@ -212,7 +212,11 @@ void ReadExpressionAttribute(QVector<VFormulaField> &expressions, const QDomElem
         return;
     }
 
-    expressions.append({.expression = expression, .element = element, .attribute = attribute});
+    VFormulaField item{};
+    item.expression = expression;
+    item.element = element;
+    item.attribute = attribute;
+    expressions.append(item);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -535,12 +539,14 @@ auto VAbstractPattern::ParsePieceCSARecords(const QDomElement &domElement) -> QV
     {
         if (const QDomElement element = QDOM_ELEMENT(nodeList, i).toElement(); not element.isNull())
         {
-            records.append({.startPoint = GetParametrUInt(element, VAbstractPattern::AttrStart, NULL_ID_STR),
-                            .path = GetParametrUInt(element, VAbstractPattern::AttrPath, NULL_ID_STR),
-                            .endPoint = GetParametrUInt(element, VAbstractPattern::AttrEnd, NULL_ID_STR),
-                            .reverse = GetParametrBool(element, VAbstractPattern::AttrNodeReverse, falseStr),
-                            .includeType = static_cast<PiecePathIncludeType>(
-                                GetParametrUInt(element, VAbstractPattern::AttrIncludeAs, QChar('1')))});
+            CustomSARecord item{};
+            item.startPoint = GetParametrUInt(element, VAbstractPattern::AttrStart, NULL_ID_STR);
+            item.path = GetParametrUInt(element, VAbstractPattern::AttrPath, NULL_ID_STR);
+            item.endPoint = GetParametrUInt(element, VAbstractPattern::AttrEnd, NULL_ID_STR);
+            item.reverse = GetParametrBool(element, VAbstractPattern::AttrNodeReverse, falseStr);
+            item.includeType = static_cast<PiecePathIncludeType>(
+                GetParametrUInt(element, VAbstractPattern::AttrIncludeAs, QChar('1')));
+            records.append(item);
         }
     }
     return records;

@@ -844,7 +844,10 @@ auto VSpline::Reduce() const -> QVector<VSpline>
         double const t2 = extrema.at(i);
         VSpline const seg = this->SplitRange(t1, t2);
         // .step = std::clamp((t2 - t1) / 5000.0, 0.00000001, 0.01);
-        pass1.append({.spl = seg, .step = 0.01});
+        ExstremaData item{};
+        item.spl = seg;
+        item.step = 0.01;
+        pass1.append(item);
     }
 
     // --- 2nd pass: further split into "simple" segments -------------------

@@ -409,7 +409,9 @@ void DialogMove::SelectedObject(bool selected, quint32 object, quint32 tool)
         {
             if (obj == m_sourceObjects.end())
             {
-                m_sourceObjects.append({.id = object});
+                SourceItem item{};
+                item.id = object;
+                m_sourceObjects.append(item);
             }
         }
         else

@@ -180,7 +180,7 @@ auto VToolHeight::Create(VToolHeightInitData initData) -> VToolHeight *
         VAbstractTool::AddRecord(initData.id, Tool::Height, initData.doc);
         auto *point = new VToolHeight(initData);
         initData.scene->addItem(point);
-        InitToolConnections(initData.scene, point);
+        InitPointToolConnections(initData.scene, point);
         VAbstractPattern::AddTool(initData.id, point);
         return point;
     }
@@ -379,7 +379,7 @@ void VToolHeight::ApplyToolOptions(const QDomElement &oldDomElement, const QDomE
 
     if (oldLabel != newLabel)
     {
-        auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
+        const auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
         connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
     }
 

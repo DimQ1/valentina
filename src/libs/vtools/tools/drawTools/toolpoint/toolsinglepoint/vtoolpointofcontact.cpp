@@ -261,7 +261,7 @@ auto VToolPointOfContact::Create(VToolPointOfContactInitData &initData) -> VTool
         VAbstractTool::AddRecord(initData.id, Tool::PointOfContact, initData.doc);
         auto *point = new VToolPointOfContact(initData);
         initData.scene->addItem(point);
-        InitToolConnections(initData.scene, point);
+        InitPointToolConnections(initData.scene, point);
         VAbstractPattern::AddTool(initData.id, point);
         return point;
     }
@@ -455,7 +455,7 @@ void VToolPointOfContact::ApplyToolOptions(const QDomElement &oldDomElement, con
 
     if (oldLabel != newLabel)
     {
-        auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
+        const auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
         connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
     }
 

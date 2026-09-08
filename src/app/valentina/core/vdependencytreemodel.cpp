@@ -144,6 +144,38 @@ auto FindChildIndex(VDependencyNode *parent, vidtype objectId) -> int
     }
     return -1;
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+void AppendUnique(QVector<vidtype> &list, vidtype id)
+{
+    if (!list.contains(id))
+    {
+        list.append(id);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void AppendUniqueNodes(QVector<vidtype> &list, const QVector<VNode> &nodes)
+{
+    for (const auto &node : nodes)
+    {
+        AppendUnique(list, node.id);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// For a MODELING_OBJECT wrapper: if a union tool sits in its downstream path, return those tool
+// nodes so the user sees the operation that holds the reference; otherwise return the piece nodes.
+auto ResolveModelingObjectDeps(const VPatternGraph *graph, vidtype id) -> QVector<VNode>
+{
+    auto toolFilter = [](const auto &n) -> auto { return n.type == VNodeType::MODELING_TOOL; };
+    if (QVector<VNode> toolNodes = graph->GetDependentNodes(id, toolFilter); !toolNodes.isEmpty())
+    {
+        return toolNodes;
+    }
+    auto pieceFilter = [](const auto &n) -> auto { return n.type == VNodeType::PIECE; };
+    return graph->GetDependentNodes(id, pieceFilter);
+}
 } // namespace
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -363,7 +395,7 @@ void VDependencyTreeModel::UpdateTree(const QVector<vidtype> &newRootObjects)
         currentOrder.append(child->objectId);
     }
 
-    QSet<vidtype> const newIds = QSet<vidtype>(newRootObjects.begin(), newRootObjects.end());
+    QSet<vidtype> const newIds = ConvertToSet(newRootObjects);
 
     // Find what to remove and what to add
     QSet<vidtype> const toRemove = currentIds - newIds;
@@ -418,12 +450,19 @@ void VDependencyTreeModel::UpdateTree(const QVector<vidtype> &newRootObjects)
     }
 
     // Refresh existing nodes if their children were loaded
-    for (auto &child : m_rootNode->children)
+    for (int i = 0; i < m_rootNode->children.size(); ++i)
     {
+        const auto &child = m_rootNode->children.at(i);
+        QModelIndex const parentIdx = index(i, 0, QModelIndex());
+
+        // Update this node and all its children recursively
+        UpdateNodeNamesRecursive(child.get(), parentIdx);
+
+        // Refresh children if they were loaded
         if (child->childrenLoaded)
         {
             QVector<vidtype> const newDeps = FetchDependenciesForObject(child->objectId);
-            UpdateNodeChildren(child.get(), newDeps);
+            UpdateNodeChildren_r(child.get(), newDeps);
         }
     }
 }
@@ -474,7 +513,7 @@ void VDependencyTreeModel::RefreshNode(const QString &objectPath)
     }
 
     QVector<vidtype> const newDependencies = FetchDependenciesForObject(node->objectId);
-    UpdateNodeChildren(node, newDependencies);
+    UpdateNodeChildren_r(node, newDependencies);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -626,7 +665,7 @@ void VDependencyTreeModel::LoadDependencies(const QModelIndex &parentIndex, VDep
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VDependencyTreeModel::UpdateNodeChildren(VDependencyNode *node, const QVector<vidtype> &newDependencies)
+void VDependencyTreeModel::UpdateNodeChildren_r(VDependencyNode *node, const QVector<vidtype> &newDependencies)
 {
     if (node == nullptr)
     {
@@ -671,6 +710,16 @@ void VDependencyTreeModel::UpdateNodeChildren(VDependencyNode *node, const QVect
         {
             // Child exists but at wrong position - move it
             // For simplicity, we'll just leave it (or implement move logic)
+        }
+    }
+
+    // Recursively refresh loaded sub-children
+    for (const auto &child : std::as_const(node->children))
+    {
+        if (child->childrenLoaded)
+        {
+            QVector<vidtype> const newDeps = FetchDependenciesForObject(child->objectId);
+            UpdateNodeChildren_r(child.get(), newDeps);
         }
     }
 }
@@ -765,19 +814,20 @@ auto VDependencyTreeModel::FetchDependenciesForObject(vidtype objectId) const ->
 
     for (const auto id : dependencies)
     {
-        if (const auto node = graph->GetVertex(id);
-            node && (node->type == VNodeType::MODELING_TOOL || node->type == VNodeType::MODELING_OBJECT))
+        const auto node = graph->GetVertex(id);
+        if (!node)
         {
-            auto Filter = [](const auto &node) -> auto { return node.type == VNodeType::PIECE; };
-            const QVector<VNode> nodeDependencies = graph->GetDependentNodes(id, Filter);
+            visibleDependencies.append(id);
+            continue;
+        }
 
-            for (const auto pieceNode : nodeDependencies)
-            {
-                if (!visibleDependencies.contains(pieceNode.id))
-                {
-                    visibleDependencies.append(pieceNode.id);
-                }
-            }
+        if (node->type == VNodeType::MODELING_TOOL)
+        {
+            AppendUnique(visibleDependencies, id);
+        }
+        else if (node->type == VNodeType::MODELING_OBJECT)
+        {
+            AppendUniqueNodes(visibleDependencies, ResolveModelingObjectDeps(graph, id));
         }
         else
         {
@@ -791,7 +841,7 @@ auto VDependencyTreeModel::FetchDependenciesForObject(vidtype objectId) const ->
 //---------------------------------------------------------------------------------------------------------------------
 auto VDependencyTreeModel::GetDisplayNameForObject(vidtype objectId) const -> QString
 {
-    QString defaultName = QStringLiteral("Object_%1").arg(objectId);
+    const QString defaultName = QStringLiteral("Object_%1").arg(objectId);
 
     if (m_doc == nullptr)
     {
@@ -821,6 +871,7 @@ auto VDependencyTreeModel::GetDisplayNameForObject(vidtype objectId) const -> QS
         case VNodeType::OBJECT:
             return GetObjectName(node->id, patternData, defaultName);
         case VNodeType::TOOL:
+        case VNodeType::MODELING_TOOL:
             return GetToolName(node->id, patternData, defaultName);
         default:
             return defaultName;
@@ -850,10 +901,38 @@ auto VDependencyTreeModel::GetDisplayToolTipForObject(vidtype objectId) const ->
         case VNodeType::PIECE:
             return tr("Piece '%1'").arg(GetPieceName(node->id, patternData, QString()));
         case VNodeType::TOOL:
+        case VNodeType::MODELING_TOOL:
             return GetToolToolTip(node->id);
         case VNodeType::OBJECT:
         default:
             return {};
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VDependencyTreeModel::UpdateNodeNamesRecursive(VDependencyNode *node, const QModelIndex &nodeIndex)
+{
+    if (!node)
+    {
+        return;
+    }
+
+    // Update this node's name
+
+    if (const QString newName = GetDisplayNameForObject(node->objectId); node->displayName != newName)
+    {
+        node->displayName = newName;
+        emit dataChanged(nodeIndex, nodeIndex, {Qt::DisplayRole});
+    }
+
+    // Update children recursively if loaded
+    if (node->childrenLoaded)
+    {
+        for (int i = 0; i < node->children.size(); ++i)
+        {
+            const QModelIndex childIdx = index(i, 0, nodeIndex);
+            UpdateNodeNamesRecursive(node->children.at(i).get(), childIdx);
+        }
     }
 }
 
@@ -914,6 +993,8 @@ auto VDependencyTreeModel::GetOperationToolName(Tool toolType, const QString &de
             return tr("Flipping by axis", "operation");
         case Tool::Move:
             return tr("Move", "operation");
+        case Tool::UnionDetails:
+            return tr("Union details", "operation");
         default:
             return defaultName;
     }
@@ -923,11 +1004,6 @@ auto VDependencyTreeModel::GetOperationToolName(Tool toolType, const QString &de
 auto VDependencyTreeModel::GetToolToolTip(vidtype id) const -> QString
 {
     const VToolRecord tool = FindToolRecord(id);
-
-    if (tool.GetToolType() == Tool::LAST_ONE_DO_NOT_USE)
-    {
-        return {};
-    }
 
     Q_STATIC_ASSERT_X(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64, "List of tools changed.");
 
@@ -995,9 +1071,40 @@ auto VDependencyTreeModel::GetToolToolTip(vidtype id) const -> QString
             return tr("Elliptical arc with given length");
         case Tool::Line:
             return tr("Line connecting two points");
+        case Tool::UnionDetails:
+            return GetUnionDetailsToolTip(id);
+        case Tool::LAST_ONE_DO_NOT_USE:
         default:
             return {};
     }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VDependencyTreeModel::GetUnionDetailsToolTip(vidtype id) const -> QString
+{
+    const VPatternGraph *graph = m_doc->PatternGraph();
+    if (const auto toolVertex = graph->GetVertex(id); toolVertex && toolVertex->indexPatternBlock >= 0)
+    {
+        auto pieceFilter = [](const auto &n) -> auto { return n.type == VNodeType::PIECE; };
+        const QVector<VNode> pieces = graph->GetDependentNodes(id, pieceFilter);
+        if (!pieces.isEmpty())
+        {
+            const VContainer patternData =
+                m_doc->GetCompletePPData(m_doc->PatternBlockMapper()->FindName(toolVertex->indexPatternBlock));
+            try
+            {
+                const QString pieceName = patternData.GetPiece(pieces.first().id).GetName();
+                return tr("Union details operation creating piece '%1'. "
+                          "Source objects cannot be deleted while this operation exists")
+                    .arg(pieceName);
+            }
+            catch (const VExceptionBadId &)
+            {
+                // ignore
+            }
+        }
+    }
+    return tr("Union details operation. Source objects cannot be deleted while this operation exists");
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1177,7 +1284,15 @@ auto VDependencyFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIn
 
     // Filter first-level items
     QModelIndex const index = sourceModel()->index(sourceRow, 0, sourceParent);
-    QString const displayName = sourceModel()->data(index, Qt::DisplayRole).toString();
 
-    return displayName.contains(filterRegularExpression());
+    if (QString const displayName = sourceModel()->data(index, Qt::DisplayRole).toString();
+        displayName.contains(filterRegularExpression()))
+    {
+        return true;
+    }
+
+    // Also allow searching by object id (e.g. the ids reported in duplicate-name warnings)
+    bool ok = false;
+    vidtype const filterId = filterRegularExpression().pattern().toUInt(&ok);
+    return ok && sourceModel()->data(index, Qt::UserRole).toUInt() == filterId;
 }

@@ -1,7 +1,7 @@
 import qbs.Utilities
 
 VLib {
-    Depends { name: "Qt"; submodules: ["core", "printsupport", "gui", "widgets"] }
+    Depends { name: "Qt"; submodules: ["core", "printsupport", "gui", "widgets", "concurrent"] }
     Depends { name: "buildconfig" }
 
     Depends {
@@ -32,7 +32,14 @@ VLib {
         condition: buildconfig.useConanPackages && buildconfig.conanCrashReportingEnabled && qbs.targetOS.contains("macos")
         cpp.libraryPaths: ["/usr/lib"]
         cpp.dynamicLibraries: ["bsm"]
-        cpp.frameworks: ["AppKit", "Security"]
+        cpp.frameworks: ["AppKit", "Security", "CoreFoundation"]
+    }
+
+    Properties {
+        // CFRunLoopIsWaiting() in the main-thread watchdog. Only reached when the block above did not match - qbs
+        // takes the first matching Properties item, so the more specific condition has to come first.
+        condition: qbs.targetOS.contains("macos")
+        cpp.frameworks: ["CoreFoundation"]
     }
 
     Properties {
@@ -70,6 +77,7 @@ VLib {
         "testpath.cpp",
         "vabstractvalapplication.cpp",
         "vabstractapplication.cpp",
+        "vasyncfileio.cpp",
         "projectversion.cpp",
         "vcommonsettings.cpp",
         "vfontinstaller.cpp",
@@ -87,6 +95,7 @@ VLib {
         "vabstractvalapplication.h",
         "vmath.h",
         "vabstractapplication.h",
+        "vasyncfileio.h",
         "projectversion.h",
         "vcommonsettings.h",
         "vvalentinasettings.h",
@@ -107,6 +116,9 @@ VLib {
         "vabstractshortcutmanager.cpp",
         "vtranslator.h",
         "vtranslator.cpp",
+        "vmainbase.h",
+        "vmainthreadwatchdog.h",
+        "vmainthreadwatchdog.cpp",
     ]
 
     Group {
@@ -150,15 +162,6 @@ VLib {
             "vshortcutdialog.cpp",
             "vshortcutdialog.h",
             "vshortcutdialog.ui",
-        ]
-    }
-
-    Group {
-        name: "fpm"
-        prefix: "fpm/"
-        files: [
-            "fixed.hpp",
-            "math.hpp",
         ]
     }
 

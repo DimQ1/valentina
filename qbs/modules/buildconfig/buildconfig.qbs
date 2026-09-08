@@ -21,13 +21,7 @@ Module {
     // do not permit the use of rpath, such as Fedora.
     property bool enableRPath: true
 
-    // Use this property to disable the use of precompiled headers. This can be used when packaging Valentina for
-    // distributions which provides not enough space on build servers.
-    property bool enablePCH: true
-
     property bool enableAppImage: false
-
-    property bool enableMultiBundle: false
 
     // Use this property to disable running macdeployqt tool. Produced app bundle will not be standalone.
     property bool runMacDeployQt: true
@@ -39,14 +33,18 @@ Module {
 
     // Use this property to disable the use of ccache.
     property bool enableCcache: true
-    readonly property bool ccachePresent: ccache.ccachePresent
-    readonly property bool ccachePCHSupport: ccache.pchSupport
-    readonly property bool buildWithCcache: enableCcache && (enablePCH && ccachePresent && ccachePCHSupport || (!enablePCH && ccachePresent))
+    readonly property bool buildWithCcache: enableCcache && ccache.ccachePresent
+
+    // Use this property to disable the use of precompiled headers. This can be used when packaging Valentina for
+    // distributions which provides not enough space on build servers.
+    // Automatically disabled when build with Clang and ccache. Can be overridden on the command line if needed.
+    property bool enablePCH: !ccache.ccachePresent || ccache.pchSupport
 
     property bool treatWarningsAsErrors: true
 
     readonly property bool useConanPackages : project.enableConan
     readonly property bool conanXercesEnabled : project.conanWithXerces
+    readonly property bool conanImmerEnabled : project.conanWithImmer
     readonly property bool conanCrashReportingEnabled : {
         if (qbs.targetOS.contains("windows")) {
             if (qbs.toolchain.contains("msvc")) {
@@ -74,6 +72,10 @@ Module {
     readonly property bool enableCodeSigning: project.enableSigning
 
     property string signingIdentity: "-"
+    property string signingThumbprint: undefined
+    property string signingHashAlgorithm: "sha256"
+    property string signingTimestampAlgorithm: "sha256"
+    property string signingTimestamp: "http://time.certum.pl"
 
     property string libDirName: "lib"
 
@@ -172,9 +174,6 @@ Module {
         if (enableAppImage && qbs.targetOS.contains("unix") && !qbs.targetOS.contains("macos"))
             defines.push('APPIMAGE');
 
-        if (enableMultiBundle)
-            defines.push('MULTI_BUNDLE');
-
         if (useConanPackages && conanCrashReportingEnabled)
             defines.push('CRASH_REPORTING');
 
@@ -205,6 +204,9 @@ Module {
     readonly property string minimumMacosVersion: {
         var qtRequiredMinVersion;
         if (Qt.core.versionMajor >= 6) {
+            // For Qt 6.12 https://doc-snapshots.qt.io/qt6-6.12/supported-platforms.html
+            if (Qt.core.versionMinor >= 12)
+                qtRequiredMinVersion = "14.4";
             // For Qt 6.10 https://doc-snapshots.qt.io/qt6-6.10/supported-platforms.html
             if (Qt.core.versionMinor >= 10)
                 qtRequiredMinVersion = "13.0";
@@ -759,7 +761,8 @@ Module {
                 if (Utilities.versionCompare(cpp.compilerVersion, "8") >= 0) {
                     debugFlags.push(
                         "-Wmultistatement-macros",
-                        "-Warray-bounds"
+                        "-Warray-bounds",
+                        "-Wno-error=array-bounds" // false positive in immer's HAMT node code
                     )
                 }
 

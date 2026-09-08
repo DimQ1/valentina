@@ -44,6 +44,7 @@
 #include "../vtoolsinglepoint.h"
 
 class VFormula;
+class VSegmentLabel;
 
 struct VToolCutInitData : VToolSinglePointInitData
 {
@@ -55,6 +56,12 @@ struct VToolCutInitData : VToolSinglePointInitData
     QString aliasSuffix2{};       // NOLINT(misc-non-private-member-variables-in-classes)
     QString name1{};              // NOLINT(misc-non-private-member-variables-in-classes)
     QString name2{};              // NOLINT(misc-non-private-member-variables-in-classes)
+    quint32 segment1Id{NULL_ID};  // NOLINT(misc-non-private-member-variables-in-classes)
+    quint32 segment2Id{NULL_ID};  // NOLINT(misc-non-private-member-variables-in-classes)
+    qreal segment1Mx{labelMX};    // NOLINT(misc-non-private-member-variables-in-classes)
+    qreal segment1My{labelMY};    // NOLINT(misc-non-private-member-variables-in-classes)
+    qreal segment2Mx{labelMX};    // NOLINT(misc-non-private-member-variables-in-classes)
+    qreal segment2My{labelMY};    // NOLINT(misc-non-private-member-variables-in-classes)
 };
 
 enum class VToolCutNameField : quint8
@@ -97,9 +104,19 @@ public:
 
     auto BaseCurveId() const -> quint32;
 
+    void ShowVisualization(bool show) override;
+    void ChangeSegmentLabelPosition(SegmentLabel segment, const QPointF &pos) override;
+
+    auto IsRemovable() const -> RemoveStatus override;
+
 public slots:
     void SetDetailsMode(bool mode) override;
-    void FullUpdateFromFile() override;
+    void Enable() override;
+    void EnableToolMove(bool move) override;
+    void AllowSegmentHover(bool enabled);
+    void ToolSelectionType(const SelectionType &selectionType) override;
+    void SetSegmentLabelVisible(bool visible);
+    void AllowLabelSelecting(bool enabled) override;
 
 protected:
     /** @brief formula keep formula of length */
@@ -113,6 +130,17 @@ protected:
 
     QString m_aliasSuffix1{};
     QString m_aliasSuffix2{};
+
+    quint32 m_segment1Id{NULL_ID};
+    quint32 m_segment2Id{NULL_ID};
+
+    qreal m_segment1Mx{labelMX};
+    qreal m_segment1My{labelMY};
+    qreal m_segment2Mx{labelMX};
+    qreal m_segment2My{labelMY};
+
+    VSegmentLabel *m_segment1Label{nullptr};
+    VSegmentLabel *m_segment2Label{nullptr};
 
     struct ToolChanges
     {
@@ -144,7 +172,8 @@ protected:
                                const QDomElement &newDomElement,
                                const ToolChanges &changes);
 
-    void RefreshGeometry();
+    auto itemChange(GraphicsItemChange change, const QVariant &value) -> QVariant override;
+    void RefreshGeometry() override;
     void SaveOptions(QDomElement &tag, QSharedPointer<VGObject> &obj) override;
     void ReadToolAttributes(const QDomElement &domElement) override;
 
@@ -155,6 +184,11 @@ protected:
                                  const QSharedPointer<T> &baseCurve,
                                  const QSharedPointer<T> &leftSub,
                                  const QSharedPointer<T> &rightSub);
+
+private slots:
+    void SegmentChoosed(quint32 id, SceneObject type);
+    void Segment1LabelPositionChanged(const QPointF &pos);
+    void Segment2LabelPositionChanged(const QPointF &pos);
 
 private:
     Q_DISABLE_COPY_MOVE(VToolCut) // NOLINT
@@ -172,6 +206,8 @@ inline void VToolCut::FixSubCurveNames(VToolCutInitData &initData,
 {
     bool fixName1 = false;
     bool fixName2 = false;
+    bool saveName1 = false;
+    bool saveName2 = false;
     if (initData.name1.isEmpty())
     {
         if (!baseCurve->IsDerivative())
@@ -186,6 +222,8 @@ inline void VToolCut::FixSubCurveNames(VToolCutInitData &initData,
                                                      initData.name);
             fixName1 = true;
         }
+
+        saveName1 = true;
     }
 
     if (initData.name2.isEmpty())
@@ -202,6 +240,8 @@ inline void VToolCut::FixSubCurveNames(VToolCutInitData &initData,
                                                      initData.name);
             fixName2 = true;
         }
+
+        saveName2 = true;
     }
 
     if (fixName1 || fixName2)
@@ -212,7 +252,10 @@ inline void VToolCut::FixSubCurveNames(VToolCutInitData &initData,
                                     fixName1 ? initData.name1 : QString(),
                                     fixName2 ? initData.name2 : QString(),
                                     initData.doc));
+    }
 
+    if (saveName1 || saveName2)
+    {
         QDomElement domElement = initData.doc->FindElementById(initData.id);
         if (!domElement.isElement())
         {
@@ -220,12 +263,12 @@ inline void VToolCut::FixSubCurveNames(VToolCutInitData &initData,
             return;
         }
 
-        if (fixName1)
+        if (saveName1)
         {
             initData.doc->SetAttribute(domElement, AttrCurveName1, initData.name1);
         }
 
-        if (fixName2)
+        if (saveName2)
         {
             initData.doc->SetAttribute(domElement, AttrCurveName2, initData.name2);
         }

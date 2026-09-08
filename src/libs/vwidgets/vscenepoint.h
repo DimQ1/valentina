@@ -53,6 +53,7 @@ public:
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
     virtual void RefreshPointGeometry(const VPointF &point);
+    void RefreshScale();
     auto boundingRect() const -> QRectF override;
 
     auto GetColorRole() const -> VColorRole;
@@ -67,14 +68,13 @@ public:
     auto GetLabelTextHoverColorRole() const -> VColorRole;
     void SetLabelTextHoverColorRole(VColorRole role);
 
-public slots:
     void RefreshLine();
 
 protected:
     /** @brief namePoint point label. */
     VGraphicsSimpleTextItem *m_namePoint; // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
 
-    /** @brief lineName line what we see if label moved too away from point. */
+    /** @brief lineName line what we see if label moved too far away from point. */
     VScaledLine *m_lineName; // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
 
     bool m_onlyPoint{false}; // NOLINT(cppcoreguidelines-non-private-member-variables-in-classes)
@@ -85,9 +85,12 @@ protected:
 
     void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
     void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
+    auto itemChange(GraphicsItemChange change, const QVariant &value) -> QVariant override;
 
     void SetOnlyPoint(bool value);
     auto IsOnlyPoint() const -> bool;
+
+    void RefreshHoverPen();
 
 private:
     Q_DISABLE_COPY_MOVE(VScenePoint) // NOLINT

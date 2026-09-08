@@ -39,7 +39,7 @@
 VValentinaShortcutManager::VValentinaShortcutManager(QObject *parent)
   : VAbstractShortcutManager{parent}
 {
-    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 87, "Check if all actions were used.");
+    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 89, "Check if all actions were used.");
 
     AddShortcut({VShortcutAction::ZoomIn, KeyBindingsToStringList(QKeySequence::ZoomIn), {}});
     AddShortcut({VShortcutAction::ZoomOut, KeyBindingsToStringList(QKeySequence::ZoomOut), {}});
@@ -95,6 +95,7 @@ VValentinaShortcutManager::VValentinaShortcutManager(QObject *parent)
                  {}});
     AddShortcut({VShortcutAction::Quit, KeyBindingsToStringList(QKeySequence::Quit), {}});
     AddShortcut({VShortcutAction::CurveDetails, {QKeySequence(Qt::Key_F2).toString()}, {}});
+    AddShortcut({VShortcutAction::ShowSegmentLabels, {}, {}});
     AddShortcut({VShortcutAction::FinalMeasurements,
                  {QKeySequence(Qt::ControlModifier | Qt::Key_I).toString()},
                  {}});
@@ -168,4 +169,7 @@ VValentinaShortcutManager::VValentinaShortcutManager(QObject *parent)
     AddShortcut({VShortcutAction::ToolEllipticalArcWithLength, {}, {}});
     AddShortcut({VShortcutAction::ToolParallelCurve, {}, {}});
     AddShortcut({VShortcutAction::ToolGraduatedCurve, {}, {}});
+    AddShortcut({VShortcutAction::AutoArrangeLabels,
+                 {QKeySequence(Qt::ControlModifier | Qt::ShiftModifier | Qt::Key_A).toString()},
+                 {}});
 }

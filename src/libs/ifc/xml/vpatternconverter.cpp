@@ -28,6 +28,7 @@
 
 #include "vpatternconverter.h"
 
+#include <optional>
 #include <QDir>
 #include <QDomNode>
 #include <QDomNodeList>
@@ -59,8 +60,8 @@ class QDomElement;
  */
 
 const QString VPatternConverter::PatternMinVerStr = QStringLiteral("0.1.4");                     // NOLINT
-const QString VPatternConverter::PatternMaxVerStr = QStringLiteral("1.1.3");                     // NOLINT
-const QString VPatternConverter::CurrentSchema = QStringLiteral("://schema/pattern/v1.1.3.xsd"); // NOLINT
+const QString VPatternConverter::PatternMaxVerStr = QStringLiteral("1.2.0");                     // NOLINT
+const QString VPatternConverter::CurrentSchema = QStringLiteral("://schema/pattern/v1.2.0.xsd"); // NOLINT
 
 // VPatternConverter::PatternMinVer; // <== DON'T FORGET TO UPDATE TOO!!!!
 // VPatternConverter::PatternMaxVer; // <== DON'T FORGET TO UPDATE TOO!!!!
@@ -87,6 +88,7 @@ Q_GLOBAL_STATIC_WITH_ARGS(const QString, strC1Radius, ("c1Radius"_L1))          
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strC2Radius, ("c2Radius"_L1))                       // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strCRadius, ("cRadius"_L1))                         // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strArc, ("arc"_L1))                                 // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strElArc, ("elArc"_L1))                             // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strAngle1, ("angle1"_L1))                           // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strAngle2, ("angle2"_L1))                           // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strRadius, ("radius"_L1))                           // NOLINT
@@ -183,8 +185,271 @@ Q_GLOBAL_STATIC_WITH_ARGS(const QString, strEnabled, ("enabled"_L1))            
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strP1, ("p1"_L1))                             // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strP2, ("p2"_L1))                             // NOLINT
 Q_GLOBAL_STATIC_WITH_ARGS(const QString, strInUse, ("inUse"_L1))                       // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strCalculation, ("calculation"_L1))           // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strOperation, ("operation"_L1))               // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strDestination, ("destination"_L1))           // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strItem, ("item"_L1))                         // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strDetails, ("details"_L1))                   // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strSegment1Id, ("segment1Id"_L1))             // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strSegment2Id, ("segment2Id"_L1))             // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strSegment3Id, ("segment3Id"_L1))             // NOLINT
+Q_GLOBAL_STATIC_WITH_ARGS(const QString, strSegment4Id, ("segment4Id"_L1))             // NOLINT
 
 QT_WARNING_POP
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Returns the quint32 id stored in @p val, or nullopt when the
+ *        string is not a valid unsigned integer.
+ */
+auto ParseId(const QString &val) -> std::optional<quint32>
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    bool ok = false;
+    const quint32 id = val.toUInt(&ok);
+    return ok ? std::optional{id} : std::nullopt;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Registers @p id in @p usedIds and advances @p maxId if
+ *        (id + @p extra) exceeds the current maximum.
+ */
+void TrackId(quint32 id, quint32 extra, quint32 &maxId, QSet<quint32> &usedIds)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    usedIds.insert(id);
+    if ((id + extra) > maxId)
+    {
+        maxId = id + extra;
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Computes the id-offset that an element's @p type implicitly
+ *        reserves in addition to the element's own id.
+ *
+ * Arc-dependent types (CurveIntersectAxis, PointOfIntersectionCurves) look
+ * up the referenced curve attribute(s) in @p arcs; if the curve is an arc the
+ * implicit reservation is 2.
+ */
+auto ExtraIdsForType(const QDomElement &el, const QString &type, const QSet<quint32> &arcs) -> quint32
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    if (type == *strCutArc)
+    {
+        return 2;
+    }
+
+    if (type == *strPointOfIntersectionArcs)
+    {
+        return 4;
+    }
+
+    if (type == *strCurveIntersectAxis)
+    {
+        if (const auto id = ParseId(el.attribute(*strCurve)); id && arcs.contains(*id))
+        {
+            return 2;
+        }
+        return 0;
+    }
+
+    if (type == *strPointOfIntersectionCurves)
+    {
+        quint32 extra = 0;
+        if (const auto id1 = ParseId(el.attribute(*strCurve1)); id1 && arcs.contains(*id1))
+        {
+            extra += 2;
+        }
+        if (const auto id2 = ParseId(el.attribute(*strCurve2)); id2 && arcs.contains(*id2))
+        {
+            extra += 2;
+        }
+        return extra;
+    }
+
+    return 0;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+struct AllocState
+{
+    using SetFn = std::function<void(QDomElement &, const QString &, quint32)>;
+
+    AllocState(quint32 startMax, const QSet<quint32> &used, SetFn setter)
+      : m_maxId(startMax),
+        m_allocated(used),
+        m_setAttr(std::move(setter))
+    {
+        // TODO. Delete if minimal supported version is 1.2.0
+        Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+    }
+
+    void TrySetOrAlloc(QDomElement &el, const QString &attr, quint32 candidate)
+    {
+        if (!m_allocated.contains(candidate))
+        {
+            m_allocated.insert(candidate);
+            m_setAttr(el, attr, candidate);
+        }
+        else
+        {
+            m_setAttr(el, attr, AllocNext());
+        }
+    }
+
+    void AllocFromMax(QDomElement &el, const QString &attr1, const QString &attr2)
+    {
+        m_setAttr(el, attr1, AllocNext());
+        m_setAttr(el, attr2, AllocNext());
+    }
+
+private:
+    auto AllocNext() -> quint32
+    {
+        while (m_allocated.contains(m_maxId + 1))
+        {
+            ++m_maxId;
+        }
+        ++m_maxId;
+        m_allocated.insert(m_maxId);
+        return m_maxId;
+    }
+
+    quint32 m_maxId;
+    QSet<quint32> m_allocated;
+    SetFn m_setAttr;
+};
+
+//---------------------------------------------------------------------------------------------------------------------
+void AssignSegmentsCutArc(QDomElement &el, quint32 id, AllocState &alloc)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    alloc.TrySetOrAlloc(el, *strSegment1Id, id + 1);
+    alloc.TrySetOrAlloc(el, *strSegment2Id, id + 2);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void AssignSegmentsCutSpline(QDomElement &el, AllocState &alloc)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    alloc.AllocFromMax(el, *strSegment1Id, *strSegment2Id);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void AssignSegmentsCurveIntersectAxis(QDomElement &el, quint32 id, const QSet<quint32> &arcs, AllocState &alloc)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    bool ok = false;
+    const quint32 curveId = el.attribute(*strCurve).toUInt(&ok);
+    if (ok && arcs.contains(curveId))
+    {
+        alloc.TrySetOrAlloc(el, *strSegment1Id, id + 1);
+        alloc.TrySetOrAlloc(el, *strSegment2Id, id + 2);
+    }
+    else
+    {
+        alloc.AllocFromMax(el, *strSegment1Id, *strSegment2Id);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void AssignSegmentsPointOfIntersectionArcs(QDomElement &el, AllocState &alloc)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    alloc.AllocFromMax(el, *strSegment1Id, *strSegment2Id);
+    alloc.AllocFromMax(el, *strSegment3Id, *strSegment4Id);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void AssignSegmentsPointOfIntersectionCurves(QDomElement &el, quint32 id, const QSet<quint32> &arcs, AllocState &alloc)
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    bool ok1 = false;
+    const bool curve1IsArc = arcs.contains(el.attribute(*strCurve1).toUInt(&ok1)) && ok1;
+
+    bool ok2 = false;
+    const bool curve2IsArc = arcs.contains(el.attribute(*strCurve2).toUInt(&ok2)) && ok2;
+
+    // Segments 1-2: owned by curve1
+    if (curve1IsArc)
+    {
+        alloc.TrySetOrAlloc(el, *strSegment1Id, id + 1);
+        alloc.TrySetOrAlloc(el, *strSegment2Id, id + 2);
+    }
+    else
+    {
+        alloc.AllocFromMax(el, *strSegment1Id, *strSegment2Id);
+    }
+
+    // Segments 3-4: owned by curve2
+    if (curve2IsArc)
+    {
+        alloc.TrySetOrAlloc(el, *strSegment3Id, id + 3);
+        alloc.TrySetOrAlloc(el, *strSegment4Id, id + 4);
+    }
+    else
+    {
+        alloc.AllocFromMax(el, *strSegment3Id, *strSegment4Id);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Dispatches segment-id assignment for a single <point> element based
+ *        on its type attribute.  Returns false when the type is not one that
+ *        requires segment ids, so the caller can skip silently.
+ */
+auto AssignSegmentsForPointType(QDomElement &el, quint32 id, const QSet<quint32> &arcs, AllocState &alloc) -> bool
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    if (const QString type = el.attribute(*strType); type == *strCutArc)
+    {
+        AssignSegmentsCutArc(el, id, alloc);
+    }
+    else if (type == *strCutSpline || type == *strCutSplinePath)
+    {
+        AssignSegmentsCutSpline(el, alloc);
+    }
+    else if (type == *strCurveIntersectAxis)
+    {
+        AssignSegmentsCurveIntersectAxis(el, id, arcs, alloc);
+    }
+    else if (type == *strPointOfIntersectionArcs)
+    {
+        AssignSegmentsPointOfIntersectionArcs(el, alloc);
+    }
+    else if (type == *strPointOfIntersectionCurves)
+    {
+        AssignSegmentsPointOfIntersectionCurves(el, id, arcs, alloc);
+    }
+    else
+    {
+        return false;
+    }
+
+    return true;
+}
 } // anonymous namespace
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -278,7 +543,8 @@ auto VPatternConverter::XSDSchemas() -> QHash<unsigned int, QString>
         std::make_pair(FormatVersion(1, 1, 0), QStringLiteral("://schema/pattern/v1.1.0.xsd")),
         std::make_pair(FormatVersion(1, 1, 1), QStringLiteral("://schema/pattern/v1.1.1.xsd")),
         std::make_pair(FormatVersion(1, 1, 2), QStringLiteral("://schema/pattern/v1.1.2.xsd")),
-        std::make_pair(FormatVersion(1, 1, 3), CurrentSchema)};
+        std::make_pair(FormatVersion(1, 1, 3), QStringLiteral("://schema/pattern/v1.1.3.xsd")),
+        std::make_pair(FormatVersion(1, 2, 0), CurrentSchema)};
 
     return schemas;
 }
@@ -304,121 +570,122 @@ void VPatternConverter::ApplyPatches()
 {
     switch (m_ver)
     {
-        case (FormatVersion(0, 1, 4)):
+        case FormatVersion(0, 1, 4):
             ToV0_2_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 2, 0)):
+        case FormatVersion(0, 2, 0):
             ToV0_2_1();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 2, 1)):
-        case (FormatVersion(0, 2, 2)):
-        case (FormatVersion(0, 2, 3)):
+        case FormatVersion(0, 2, 1):
+        case FormatVersion(0, 2, 2):
+        case FormatVersion(0, 2, 3):
             ToV0_2_4();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 2, 4)):
-        case (FormatVersion(0, 2, 5)):
-        case (FormatVersion(0, 2, 6)):
-        case (FormatVersion(0, 2, 7)):
+        case FormatVersion(0, 2, 4):
+        case FormatVersion(0, 2, 5):
+        case FormatVersion(0, 2, 6):
+        case FormatVersion(0, 2, 7):
             ToV0_3_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 3, 0)):
+        case FormatVersion(0, 3, 0):
             ToV0_3_1();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 3, 1)):
-        case (FormatVersion(0, 3, 2)):
-        case (FormatVersion(0, 3, 3)):
-        case (FormatVersion(0, 3, 4)):
-        case (FormatVersion(0, 3, 5)):
-        case (FormatVersion(0, 3, 6)):
-        case (FormatVersion(0, 3, 7)):
-        case (FormatVersion(0, 3, 8)):
-        case (FormatVersion(0, 3, 9)):
+        case FormatVersion(0, 3, 1):
+        case FormatVersion(0, 3, 2):
+        case FormatVersion(0, 3, 3):
+        case FormatVersion(0, 3, 4):
+        case FormatVersion(0, 3, 5):
+        case FormatVersion(0, 3, 6):
+        case FormatVersion(0, 3, 7):
+        case FormatVersion(0, 3, 8):
+        case FormatVersion(0, 3, 9):
             ToV0_4_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 4, 0)):
-        case (FormatVersion(0, 4, 1)):
-        case (FormatVersion(0, 4, 2)):
-        case (FormatVersion(0, 4, 3)):
+        case FormatVersion(0, 4, 0):
+        case FormatVersion(0, 4, 1):
+        case FormatVersion(0, 4, 2):
+        case FormatVersion(0, 4, 3):
             ToV0_4_4();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 4, 4)):
-        case (FormatVersion(0, 4, 5)):
-        case (FormatVersion(0, 4, 6)):
-        case (FormatVersion(0, 4, 7)):
-        case (FormatVersion(0, 4, 8)):
-        case (FormatVersion(0, 5, 0)):
-        case (FormatVersion(0, 5, 1)):
+        case FormatVersion(0, 4, 4):
+        case FormatVersion(0, 4, 5):
+        case FormatVersion(0, 4, 6):
+        case FormatVersion(0, 4, 7):
+        case FormatVersion(0, 4, 8):
+        case FormatVersion(0, 5, 0):
+        case FormatVersion(0, 5, 1):
             ToV0_6_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 6, 0)):
-        case (FormatVersion(0, 6, 1)):
+        case FormatVersion(0, 6, 0):
+        case FormatVersion(0, 6, 1):
             ToV0_6_2();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 6, 2)):
-        case (FormatVersion(0, 6, 3)):
-        case (FormatVersion(0, 6, 4)):
-        case (FormatVersion(0, 6, 5)):
-        case (FormatVersion(0, 6, 6)):
-        case (FormatVersion(0, 7, 0)):
-        case (FormatVersion(0, 7, 1)):
-        case (FormatVersion(0, 7, 2)):
-        case (FormatVersion(0, 7, 3)):
-        case (FormatVersion(0, 7, 4)):
-        case (FormatVersion(0, 7, 5)):
-        case (FormatVersion(0, 7, 6)):
-        case (FormatVersion(0, 7, 7)):
-        case (FormatVersion(0, 7, 8)):
-        case (FormatVersion(0, 7, 9)):
-        case (FormatVersion(0, 7, 10)):
-        case (FormatVersion(0, 7, 11)):
-        case (FormatVersion(0, 7, 12)):
-        case (FormatVersion(0, 7, 13)):
-        case (FormatVersion(0, 8, 0)):
-        case (FormatVersion(0, 8, 1)):
-        case (FormatVersion(0, 8, 2)):
-        case (FormatVersion(0, 8, 3)):
-        case (FormatVersion(0, 8, 4)):
-        case (FormatVersion(0, 8, 5)):
-        case (FormatVersion(0, 8, 6)):
-        case (FormatVersion(0, 8, 7)):
-        case (FormatVersion(0, 8, 8)):
+        case FormatVersion(0, 6, 2):
+        case FormatVersion(0, 6, 3):
+        case FormatVersion(0, 6, 4):
+        case FormatVersion(0, 6, 5):
+        case FormatVersion(0, 6, 6):
+        case FormatVersion(0, 7, 0):
+        case FormatVersion(0, 7, 1):
+        case FormatVersion(0, 7, 2):
+        case FormatVersion(0, 7, 3):
+        case FormatVersion(0, 7, 4):
+        case FormatVersion(0, 7, 5):
+        case FormatVersion(0, 7, 6):
+        case FormatVersion(0, 7, 7):
+        case FormatVersion(0, 7, 8):
+        case FormatVersion(0, 7, 9):
+        case FormatVersion(0, 7, 10):
+        case FormatVersion(0, 7, 11):
+        case FormatVersion(0, 7, 12):
+        case FormatVersion(0, 7, 13):
+        case FormatVersion(0, 8, 0):
+        case FormatVersion(0, 8, 1):
+        case FormatVersion(0, 8, 2):
+        case FormatVersion(0, 8, 3):
+        case FormatVersion(0, 8, 4):
+        case FormatVersion(0, 8, 5):
+        case FormatVersion(0, 8, 6):
+        case FormatVersion(0, 8, 7):
+        case FormatVersion(0, 8, 8):
             ToV0_8_8();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 8, 9)):
-        case (FormatVersion(0, 8, 10)):
-        case (FormatVersion(0, 8, 11)):
-        case (FormatVersion(0, 8, 12)):
-        case (FormatVersion(0, 8, 13)):
+        case FormatVersion(0, 8, 9):
+        case FormatVersion(0, 8, 10):
+        case FormatVersion(0, 8, 11):
+        case FormatVersion(0, 8, 12):
+        case FormatVersion(0, 8, 13):
             ToV0_9_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 9, 0)):
+        case FormatVersion(0, 9, 0):
             ToV0_9_1();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 9, 1)):
+        case FormatVersion(0, 9, 1):
             ToV0_9_2();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 9, 2)):
-        case (FormatVersion(0, 9, 3)):
-        case (FormatVersion(0, 9, 4)):
-        case (FormatVersion(0, 9, 5)):
+        case FormatVersion(0, 9, 2):
+        case FormatVersion(0, 9, 3):
+        case FormatVersion(0, 9, 4):
+        case FormatVersion(0, 9, 5):
             ToV0_9_6();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 9, 6)):
+        case FormatVersion(0, 9, 6):
             ToV0_9_7();
             Q_FALLTHROUGH();
-        case (FormatVersion(0, 9, 7)):
-        case (FormatVersion(0, 9, 8)):
-        case (FormatVersion(0, 9, 9)):
-        case (FormatVersion(1, 0, 0)):
+        case FormatVersion(0, 9, 7):
+        case FormatVersion(0, 9, 8):
+        case FormatVersion(0, 9, 9):
+        case FormatVersion(1, 0, 0):
             ToV1_1_0();
             Q_FALLTHROUGH();
-        case (FormatVersion(1, 1, 0)):
-        case (FormatVersion(1, 1, 1)):
-        case (FormatVersion(1, 1, 2)):
-            ToV1_1_3();
+        case FormatVersion(1, 1, 0):
+        case FormatVersion(1, 1, 1):
+        case FormatVersion(1, 1, 2):
+        case FormatVersion(1, 1, 3):
+            ToV1_2_0();
             ValidateXML(CurrentSchema);
             Q_FALLTHROUGH();
-        case (FormatVersion(1, 1, 3)):
+        case FormatVersion(1, 2, 0):
             break;
         default:
             InvalidVersion(m_ver);
@@ -436,7 +703,7 @@ void VPatternConverter::DowngradeToCurrentMaxVersion()
 auto VPatternConverter::IsReadOnly() const -> bool
 {
     // Check if attribute readOnly was not changed in file format
-    Q_STATIC_ASSERT_X(VPatternConverter::PatternMaxVer == FormatVersion(1, 1, 3), "Check attribute readOnly.");
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMaxVer == FormatVersion(1, 2, 0), "Check attribute readOnly.");
 
     // Possibly in future attribute readOnly will change position etc.
     // For now position is the same for all supported format versions.
@@ -648,12 +915,14 @@ void VPatternConverter::ToV1_1_0()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VPatternConverter::ToV1_1_3()
+void VPatternConverter::ToV1_2_0()
 {
-    // TODO. Delete if minimal supported version is 1.1.3
-    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 1, 3), "Time to refactor the code.");
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
 
-    SetVersion(QStringLiteral("1.1.3"));
+    ExplicitSegmentIdsV1_2_0();
+
+    SetVersion(QStringLiteral("1.2.0"));
     Save();
 }
 
@@ -2192,7 +2461,7 @@ void VPatternConverter::ConvertImageToV0_9_0()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VPatternConverter::ConvertMeasurementsPathToV0_9_1()
+void VPatternConverter::ConvertMeasurementsPathToV0_9_1() const
 {
     // TODO. Delete if minimal supported version is 0.9.1
     Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(0, 9, 1), "Time to refactor the code.");
@@ -2334,6 +2603,178 @@ void VPatternConverter::RemoveInUseAttributeV1_1_0() const
             domNode = domNode.nextSibling();
         }
     }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Walks every child element of every <calculation> section and
+ *        delegates processing to ProcessCalculationElement().
+ */
+void VPatternConverter::ProcessCalculationSectionsV1_2_0(quint32 &maxId,
+                                                         QSet<quint32> &usedIds,
+                                                         QSet<quint32> &arcs) const
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    const QDomNodeList calcSections = elementsByTagName(*strCalculation);
+    for (int s = 0; s < calcSections.size(); ++s)
+    {
+        const QDomNodeList children = calcSections.at(s).childNodes();
+        for (int i = 0; i < children.size(); ++i)
+        {
+            if (const QDomElement el = children.at(i).toElement(); !el.isNull())
+            {
+                ProcessCalculationElementV1_2_0(el, maxId, usedIds, arcs);
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Processes a single child element of a <calculation> section,
+ *        updating @p maxId, @p usedIds, and @p arcs as required.
+ */
+void VPatternConverter::ProcessCalculationElementV1_2_0(const QDomElement &el,
+                                                        quint32 &maxId,
+                                                        QSet<quint32> &usedIds,
+                                                        QSet<quint32> &arcs) const
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    const QString idVal = el.attribute(*strId);
+    const auto id = ParseId(idVal);
+    if (!id)
+    {
+        return;
+    }
+
+    if (el.tagName() == *strArc || el.tagName() == *strElArc)
+    {
+        arcs.insert(*id);
+    }
+
+    const quint32 extra = ExtraIdsForType(el, el.attribute(*strType), arcs);
+    TrackId(*id, extra, maxId, usedIds);
+
+    if (el.tagName() == *strOperation)
+    {
+        TrackOperationDestinationsV1_2_0(el, maxId, usedIds);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief Tracks every idObject attribute found inside the
+ *        <destination><item> subtree of an <operation> element.
+ */
+void VPatternConverter::TrackOperationDestinationsV1_2_0(const QDomElement &opEl,
+                                                         quint32 &maxId,
+                                                         QSet<quint32> &usedIds) const
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    const QDomNodeList destSections = opEl.elementsByTagName(*strDestination);
+    for (int d = 0; d < destSections.size(); ++d)
+    {
+        const QDomElement destSecEl = destSections.at(d).toElement();
+        if (destSecEl.isNull())
+        {
+            continue;
+        }
+
+        const QDomNodeList items = destSecEl.elementsByTagName(*strItem);
+        for (int j = 0; j < items.size(); ++j)
+        {
+            if (const auto id = ParseId(items.at(j).toElement().attribute(*strIdObject)))
+            {
+                TrackId(*id, 0, maxId, usedIds);
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VPatternConverter::MaxIdV1_2_0() const -> std::tuple<quint32, QSet<quint32>, QSet<quint32>>
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    quint32 maxId = 0;
+    QSet<quint32> usedIds;
+    QSet<quint32> arcs;
+
+    ProcessCalculationSectionsV1_2_0(maxId, usedIds, arcs);
+
+    auto IterateSection = [this, &maxId, &usedIds](const QString &tag)
+    {
+        const QDomNodeList sections = elementsByTagName(tag);
+        for (int s = 0; s < sections.size(); ++s)
+        {
+            const QDomNodeList children = sections.at(s).childNodes();
+            for (int i = 0; i < children.size(); ++i)
+            {
+                if (const QDomElement el = children.at(i).toElement(); !el.isNull())
+                {
+                    if (const auto id = ParseId(el.attribute(*strId)))
+                    {
+                        TrackId(*id, 0, maxId, usedIds);
+                    }
+                }
+            }
+        }
+    };
+
+    IterateSection(*strModeling);
+    IterateSection(*strDetails);
+
+    return {maxId, arcs, usedIds};
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VPatternConverter::AddSegmentIdsV1_2_0(quint32 maxId, const QSet<quint32> &arcs, const QSet<quint32> &usedIds) const
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    AllocState alloc(maxId,
+                     usedIds,
+                     [this](QDomElement &el, const QString &attr, quint32 val) -> void
+                     { SetAttribute(el, attr, QString::number(val)); });
+
+    const QDomNodeList calcSections = elementsByTagName(*strCalculation);
+    for (int s = 0; s < calcSections.size(); ++s)
+    {
+        const QDomNodeList children = calcSections.at(s).childNodes();
+        for (int i = 0; i < children.size(); ++i)
+        {
+            QDomElement el = children.at(i).toElement();
+            if (el.isNull() || el.tagName() != *strPoint)
+            {
+                continue;
+            }
+
+            bool ok = false;
+            const quint32 id = el.attribute(*strId).toUInt(&ok);
+            if (ok)
+            {
+                AssignSegmentsForPointType(el, id, arcs, alloc);
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VPatternConverter::ExplicitSegmentIdsV1_2_0() const
+{
+    // TODO. Delete if minimal supported version is 1.2.0
+    Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(1, 2, 0), "Time to refactor the code.");
+
+    const auto [maxId, arcs, usedIds] = MaxIdV1_2_0();
+    AddSegmentIdsV1_2_0(maxId, arcs, usedIds);
 }
 
 //---------------------------------------------------------------------------------------------------------------------

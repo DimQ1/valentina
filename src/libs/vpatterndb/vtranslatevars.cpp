@@ -168,9 +168,9 @@ void VTranslateVars::InitFunctions()
                                  translate("VTranslateVars", "hyperbolic arcus cosine function", "function acosh"));
     functionsArguments.insert(acosh_F, oneArgument);
 
-    functions.insert(atanh_F, translate("VTranslateVars", "atanh", "hyperbolic arcur tangens function"));
+    functions.insert(atanh_F, translate("VTranslateVars", "atanh", "hyperbolic arcus tangent function"));
     functionsDescriptions.insert(atanh_F,
-                                 translate("VTranslateVars", "hyperbolic arcur tangens function", "function atanh"));
+                                 translate("VTranslateVars", "hyperbolic arcus tangent function", "function atanh"));
     functionsArguments.insert(atanh_F, oneArgument);
 
     functions.insert(sinD_F, translate("VTranslateVars", "sinD", "sine function working with degrees"));
@@ -295,9 +295,29 @@ void VTranslateVars::InitFunctions()
 #undef translate
 
 //---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief SupportVariableTranslation check if variable and function names can be translated for the current locale.
+ *
+ * Names are parser identifiers, so a translated name must consist of characters from
+ * QmuFormulaBase::InitCharSets(). That alphabet covers Latin, Cyrillic, Greek, Armenian and Arabic scripts, but not
+ * CJK or Hebrew. Locales written in an uncovered script cannot have translated names at all.
+ */
+auto VTranslateVars::SupportVariableTranslation() -> bool
+{
+    static const QStringList unsupported{QStringLiteral("zh_CN"), QStringLiteral("he_IL"), QStringLiteral("ja_JP")};
+    return not unsupported.contains(VAbstractApplication::VApp()->Settings()->GetLocale());
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VTranslateVars::PrepareFunctionTranslations()
 {
     translatedFunctions.clear();
+
+    if (not SupportVariableTranslation())
+    {
+        return;
+    }
+
     QMap<QString, qmu::QmuTranslation>::const_iterator i = functions.constBegin();
     while (i != functions.constEnd())
     {
@@ -622,10 +642,9 @@ auto VTranslateVars::VariablesToUser(QString &newFormula, vsizetype position, co
 //---------------------------------------------------------------------------------------------------------------------
 auto VTranslateVars::InternalVarToUser(const QString &var) const -> QString
 {
-    const QString locale = VAbstractApplication::VApp()->Settings()->GetLocale();
-    if (locale == QStringLiteral("zh_CN") || locale == QStringLiteral("he_IL") || locale == QStringLiteral("ja_JP"))
+    if (not SupportVariableTranslation())
     {
-        return var; // We do not support translation of variables for these locales
+        return var;
     }
 
     VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
@@ -647,10 +666,9 @@ auto VTranslateVars::InternalVarToUser(const QString &var) const -> QString
 //---------------------------------------------------------------------------------------------------------------------
 auto VTranslateVars::InternalVarFromUser(const QString &var) const -> QString
 {
-    const QString locale = VAbstractApplication::VApp()->Settings()->GetLocale();
-    if (locale == QStringLiteral("zh_CN") || locale == QStringLiteral("he_IL") || locale == QStringLiteral("ja_JP"))
+    if (not SupportVariableTranslation())
     {
-        return var; // We do not support translation of variables for these locales
+        return var;
     }
 
     VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
@@ -672,10 +690,9 @@ auto VTranslateVars::InternalVarFromUser(const QString &var) const -> QString
 //---------------------------------------------------------------------------------------------------------------------
 auto VTranslateVars::VarToUser(const QString &var) const -> QString
 {
-    const QString locale = VAbstractApplication::VApp()->Settings()->GetLocale();
-    if (locale == QStringLiteral("zh_CN") || locale == QStringLiteral("he_IL") || locale == QStringLiteral("ja_JP"))
+    if (not SupportVariableTranslation())
     {
-        return var; // We do not support translation of variables for these locales
+        return var;
     }
 
     VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
@@ -695,10 +712,9 @@ auto VTranslateVars::VarToUser(const QString &var) const -> QString
 //---------------------------------------------------------------------------------------------------------------------
 auto VTranslateVars::VarFromUser(const QString &var) const -> QString
 {
-    const QString locale = VAbstractApplication::VApp()->Settings()->GetLocale();
-    if (locale == QStringLiteral("zh_CN") || locale == QStringLiteral("he_IL") || locale == QStringLiteral("ja_JP"))
+    if (not SupportVariableTranslation())
     {
-        return var; // We do not support translation of variables for Chinese
+        return var;
     }
 
     VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
@@ -736,8 +752,6 @@ auto VTranslateVars::FormulaFromUser(const QString &formula, bool osSeparator) c
         return formula;
     }
 
-    qDebug() << "Formula:" << formula;
-
     // Eval formula
     QScopedPointer<qmu::QmuTokenParser> cal(
         new qmu::QmuTokenParser(formula, osSeparator, true, GetTranslatedFunctions()));
@@ -747,8 +761,8 @@ auto VTranslateVars::FormulaFromUser(const QString &formula, bool osSeparator) c
 
     QString newFormula = formula; // Local copy for making changes
 
-    VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
-    if (settings->IsTranslateFormula())
+    if (VCommonSettings const *settings = VAbstractApplication::VApp()->Settings();
+        settings->IsTranslateFormula() && SupportVariableTranslation())
     {
         TranslateVarsFromUser(newFormula, tokens, numbers);
     }
@@ -787,8 +801,6 @@ auto VTranslateVars::FormulaToUser(const QString &formula, bool osSeparator) con
         return formula;
     }
 
-    qDebug() << "Formula:" << formula;
-
     QString newFormula = formula; // Local copy for making changes
 
     QMap<vsizetype, QString> tokens;
@@ -809,7 +821,8 @@ auto VTranslateVars::FormulaToUser(const QString &formula, bool osSeparator) con
         return newFormula;
     }
 
-    if (VCommonSettings const *settings = VAbstractApplication::VApp()->Settings(); settings->IsTranslateFormula())
+    if (VCommonSettings const *settings = VAbstractApplication::VApp()->Settings();
+        settings->IsTranslateFormula() && SupportVariableTranslation())
     {
         TranslateVarsToUser(newFormula, tokens, numbers);
     }

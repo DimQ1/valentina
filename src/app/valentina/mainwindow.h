@@ -85,6 +85,7 @@ public slots:
     void UpdateVisibilityGroups() override;
     void UpdateDetailsList() override;
     void ZoomFitBestCurrent() override;
+    void SetToolOptionsDialogVisible(bool visible) override;
     void PlaceBackgroundImage(const QPointF &pos, const QString &fileName);
     void RemoveBackgroundImage(const QUuid &id);
 
@@ -116,6 +117,11 @@ signals:
     void EnableDetailHover(bool enable);
     void EnableImageBackgroundHover(bool enable);
 
+    void ShowArcSegmentLabel(bool show);
+    void ShowElArcSegmentLabel(bool show);
+    void ShowSplineSegmentLabel(bool show);
+    void ShowSplinePathSegmentLabel(bool show);
+
 protected:
     void keyPressEvent(QKeyEvent *event) override;
     void showEvent(QShowEvent *event) override;
@@ -134,6 +140,8 @@ protected:
 private slots:
     void ScaleChanged(qreal scale);
     void MouseMove(const QPointF &scenePos);
+    void AutoArrangeLabels(QPoint globalPos);
+    void RunAutoArrangeLabels();
     void Clear();
     void PatternChangesWereSaved(bool saved);
     void LastUsedTool();
@@ -241,6 +249,7 @@ private slots:
     void ShowMeasurements();
     void MeasurementsChanged(const QString &path);
     void SyncMeasurements();
+    void MeasurementsSyncTimerTimeout();
 
     void CreateWatermark();
     void EditCurrentWatermark();
@@ -367,6 +376,11 @@ private:
     bool m_backgroundImagesActive{false};
     bool m_dependenciesActive{false};
 
+    // True while a tool options (edit) dialog is open. Undo/redo are blocked during this time because
+    // running them triggers a full reparse that destroys the tool and pattern container the open dialog
+    // still references, leading to a use-after-free when the dialog is accepted.
+    bool m_toolOptionsDialogVisible{false};
+
     QMultiHash<VShortcutAction, QAction *> m_shortcutActions{};
 
     void InitDimensionControls();
@@ -444,9 +458,10 @@ private:
 
     auto LoadMeasurements(const QString &patternPath, QString &path) -> bool;
     auto UpdateMeasurements(const QString &patternPath, QString &path, qreal baseA, qreal baseB, qreal baseC) -> bool;
-    auto UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, qreal baseA, qreal baseB, qreal baseC) -> bool;
+    auto UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, qreal baseA, qreal baseB, qreal baseC,
+                            bool rebuildGradation = true) -> bool;
 
-    void ReadMeasurements(qreal baseA, qreal baseB, qreal baseC);
+    void ReadMeasurements(qreal baseA, qreal baseB, qreal baseC, bool rebuildGradation = true);
 
     void ReopenFilesAfterCrash(QStringList &args);
     auto DoExport(const VCommandLinePtr &expParams) -> bool;
@@ -467,6 +482,8 @@ private:
     void ToolSelectSpline();
     void ToolSelectSplinePath();
     void ToolSelectArc();
+    void ToolSelectArcElArc();
+    void ToolSelectArcCurve();
     void ToolSelectPointArc();
     void ToolSelectCurve();
     void ToolSelectAllDrawObjects();

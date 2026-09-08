@@ -87,6 +87,8 @@ QT_WARNING_POP
 namespace
 {
 const qreal AAMATextHeight = 2.5;
+// ASTM D6673 4.3.15: "For readability, the text height for annotation should be 3.5 or 5 mm in height."
+const qreal ASTMAnnotationTextHeight = 5.0;
 
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_CLANG("-Wunused-member-function")
@@ -1184,11 +1186,12 @@ void VDxfEngine::ExportStyleSystemText(const QSharedPointer<dx_iface> &input, co
         const QStringList strings = detail.GetPatternText();
         if (not strings.isEmpty())
         {
+            const QFontMetrics fm(detail.GetPatternLabelData().GetFont());
+            const qreal height = ToPixel(fm.ascent() * m_yscale, m_varInsunits);
             for (int j = 0; j < strings.size(); ++j)
             {
-                const qreal height = ToPixel(AAMATextHeight * m_yscale, m_varInsunits);
                 QPointF const pos(0, GetSize().height() - height * (static_cast<int>(strings.size()) - j - 1));
-                input->AddEntity(AAMAText(pos, strings.at(j), *layer1));
+                input->AddEntity(AAMAText(pos, strings.at(j), *layer1, height));
             }
             return;
         }
@@ -1541,8 +1544,8 @@ void VDxfEngine::ExportASTMAnnotationText(const QSharedPointer<dx_ifaceBlock> &d
     QString const name = detail.GetName();
     QPointF const textPos = detail.VLayoutPiece::MappedDetailBoundingRect().center();
 
-    QPointF const pos(textPos.x(), textPos.y() - ToPixel(AAMATextHeight, m_varInsunits));
-    detailBlock->ent.push_back(AAMAText(pos, name, *layer15));
+    QPointF const pos(textPos.x(), textPos.y() - ToPixel(ASTMAnnotationTextHeight, m_varInsunits));
+    detailBlock->ent.push_back(AAMAText(pos, name, *layer15, ASTMAnnotationTextHeight));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1862,14 +1865,15 @@ auto VDxfEngine::AAMALine(const QLineF &line, const UTF8STRING &layer) -> DRW_En
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VDxfEngine::AAMAText(const QPointF &pos, const QString &text, const UTF8STRING &layer) -> DRW_Entity *
+auto VDxfEngine::AAMAText(const QPointF &pos, const QString &text, const UTF8STRING &layer, qreal height)
+    -> DRW_Entity *
 {
     auto *textLine = new DRW_Text();
     textLine->basePoint =
         DRW_Coord(FromPixel(pos.x(), m_varInsunits), FromPixel(GetSize().height() - pos.y(), m_varInsunits), 0);
     textLine->secPoint =
         DRW_Coord(FromPixel(pos.x(), m_varInsunits), FromPixel(GetSize().height() - pos.y(), m_varInsunits), 0);
-    textLine->height = AAMATextHeight;
+    textLine->height = height > 0 ? height : AAMATextHeight;
     textLine->layer = layer;
     textLine->text = text.toStdString();
 

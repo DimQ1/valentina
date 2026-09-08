@@ -39,6 +39,7 @@
 #include "../vmisc/projectversion.h"
 #include "../vmisc/qt_dispatch/qt_dispatch.h"
 #include "../vmisc/theme/vtheme.h"
+#include "../vmisc/vasyncfileio.h"
 #include "../vmisc/vsysexits.h"
 #include "dialogs/dialogtapepreferences.h"
 #include "qfuturewatcher.h"
@@ -163,6 +164,54 @@ inline void LogMessageDetails(QtMsgType type, const QMessageLogContext &context,
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+inline void ShowNoisyMessageBox(QtMsgType type, const QString &logMsg)
+{
+    // fixme: trying to make sure there are no save/load dialogs are opened, because error message
+    //  during them will lead to crash
+    const bool topWinAllowsPop = (QApplication::activeModalWidget() == nullptr) ||
+                                 !QApplication::activeModalWidget()->inherits("QFileDialog");
+
+    if (not MApplication::VApp()->IsTestMode() && topWinAllowsPop)
+    {
+        QMessageBox messageBox;
+        switch (type)
+        {
+            case QtWarningMsg:
+                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Warning"));
+                messageBox.setIcon(QMessageBox::Warning);
+                break;
+            case QtCriticalMsg:
+                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Critical error"));
+                messageBox.setIcon(QMessageBox::Critical);
+                break;
+            case QtFatalMsg:
+                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Fatal error"));
+                messageBox.setIcon(QMessageBox::Critical);
+                break;
+            case QtInfoMsg:
+                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Information"));
+                messageBox.setIcon(QMessageBox::Information);
+                break;
+            case QtDebugMsg:
+            default:
+                break;
+        }
+
+        messageBox.setText(VAbstractApplication::ClearMessage(logMsg));
+        messageBox.setStandardButtons(QMessageBox::Ok);
+        messageBox.setWindowModality(Qt::ApplicationModal);
+        messageBox.setModal(true);
+#ifndef QT_NO_CURSOR
+        QGuiApplication::setOverrideCursor(Qt::ArrowCursor);
+#endif
+        messageBox.exec();
+#ifndef QT_NO_CURSOR
+        QGuiApplication::restoreOverrideCursor();
+#endif
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 inline void noisyFailureMsgHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
     // only the GUI thread should display message boxes.  If you are
@@ -211,15 +260,28 @@ inline void noisyFailureMsgHandler(QtMsgType type, const QMessageLogContext &con
     {
         type = QtDebugMsg;
     }
+
+    // Benign Qt-internal noise emitted while a QComboBox popup is torn down (e.g. inside a modal dialog
+    // such as Preferences). Harmless, but as warnings they used to pop a modal error box from the
+    // message handler; reentering the event loop over the half-destroyed popup then crashed. Keep them
+    // out of the user's face.
+    if ((type == QtWarningMsg) && (msg.contains(QStringLiteral("parent must be in parent hierarchy")) ||
+                                   (msg.contains(QStringLiteral("QBackingStore::flush()")) &&
+                                    msg.contains(QStringLiteral("does not have a handle")))))
+    {
+        type = QtDebugMsg;
+    }
 #endif
 
-    // this is another one that doesn't make sense as just a debug message.  pretty serious
-    // sign of a problem
-    // http://www.developer.nokia.com/Community/Wiki/QPainter::begin:Paint_device_returned_engine_%3D%3D_0_(Known_Issue)
-    if ((type == QtDebugMsg) && msg.contains(QStringLiteral("QPainter::begin")) &&
-        msg.contains(QStringLiteral("Paint device returned engine")))
+    // Qt reports a broken paint device ("QPainter::begin: Paint device returned engine == 0") and then every
+    // call on the dead painter ("QPainter::setPen: Painter not active", ...) as warnings, and the message
+    // handler turns a warning into a modal error box. One failed begin() therefore produces a dialog per
+    // painter call, per repaint, raised from inside the paint stack itself. Crash report a9979fa1 (1.1.0,
+    // b75c9bff3) ends exactly that way: twelve painter warnings, twelve modal boxes, then an access
+    // violation in Qt's paint code. The user can act on none of it, so keep it in the log only.
+    if ((type == QtWarningMsg) && msg.startsWith("QPainter::"_L1))
     {
-        type = QtWarningMsg;
+        type = QtDebugMsg;
     }
 
     // This qWarning about "Cowardly refusing to send clipboard message to hung application..."
@@ -239,13 +301,23 @@ inline void noisyFailureMsgHandler(QtMsgType type, const QMessageLogContext &con
         type = QtDebugMsg;
     }
 
-    if (msg.contains("GOAWAY invalid stream"_L1, Qt::CaseInsensitive))
+    // Qt's network stack reports transport hiccups (HTTP/2 GOAWAY, aborted streams, TLS chatter) as
+    // warnings, and the message handler turns a warning into a modal error box. The only network traffic
+    // here is the update check and usage statistics, which the user never asked for and cannot act on, so
+    // the box is pure noise - and popping it from a network callback has crashed before. Valentina's own
+    // network code reports its failures itself.
+    //
+    // The analytics worker (category "v.analytics") is the same story: it logs its own post failures
+    // (unreachable host, DNS lookup failure, etc.) as qCWarning, which is opt-in telemetry the user never
+    // asked for and cannot act on either, so it must not surface as a modal box.
+    if (context.category != nullptr && (QLatin1String(context.category).startsWith("qt.network"_L1) ||
+                                         QLatin1String(context.category) == "v.analytics"_L1))
     {
         type = QtDebugMsg;
     }
 
     QString logMsg = msg;
-    if (const bool isWarningMessage = VAbstractApplication::VApp()->IsWarningMessage(msg); isWarningMessage)
+    if (const bool isWarningMessage = VAbstractApplication::IsWarningMessage(msg); isWarningMessage)
     {
         logMsg = logMsg.remove(VAbstractApplication::warningMessageSignature);
     }
@@ -254,48 +326,25 @@ inline void noisyFailureMsgHandler(QtMsgType type, const QMessageLogContext &con
 
     if (isGuiThread)
     {
-        // fixme: trying to make sure there are no save/load dialogs are opened, because error message during them will
-        // lead to crash
-        const bool topWinAllowsPop = (QApplication::activeModalWidget() == nullptr) ||
-                                     !QApplication::activeModalWidget()->inherits("QFileDialog");
-        QMessageBox messageBox;
-        switch (type)
+        if (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg)
         {
-            case QtWarningMsg:
-                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Warning"));
-                messageBox.setIcon(QMessageBox::Warning);
-                break;
-            case QtCriticalMsg:
-                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Critical error"));
-                messageBox.setIcon(QMessageBox::Critical);
-                break;
-            case QtFatalMsg:
-                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Fatal error"));
-                messageBox.setIcon(QMessageBox::Critical);
-                break;
-            case QtInfoMsg:
-                messageBox.setWindowTitle(QApplication::translate("mNoisyHandler", "Information"));
-                messageBox.setIcon(QMessageBox::Information);
-                break;
-            case QtDebugMsg:
-            default:
-                break;
-        }
+            auto ShowMessageBox = [type, logMsg]() { ShowNoisyMessageBox(type, logMsg); };
 
-        if ((type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg) &&
-            not MApplication::VApp()->IsTestMode() && topWinAllowsPop)
-        {
-            messageBox.setText(VAbstractApplication::ClearMessage(logMsg));
-            messageBox.setStandardButtons(QMessageBox::Ok);
-            messageBox.setWindowModality(Qt::ApplicationModal);
-            messageBox.setModal(true);
-#ifndef QT_NO_CURSOR
-            QGuiApplication::setOverrideCursor(Qt::ArrowCursor);
-#endif
-            messageBox.exec();
-#ifndef QT_NO_CURSOR
-            QGuiApplication::restoreOverrideCursor();
-#endif
+            if (type == QtFatalMsg)
+            {
+                // A fatal message aborts right below. The dialog must be shown synchronously here or it
+                // will never appear.
+                ShowMessageBox();
+            }
+            else
+            {
+                // Never pop a modal dialog synchronously from whatever call stack logged the message: the
+                // nested event loop from QMessageBox::exec() then pumps events over not-yet-consistent
+                // state, which has repeatedly caused crashes in this codebase (see e.g. commits 714cd5d89,
+                // 06f755ed6). Defer to the next event loop iteration, where the stack that logged the
+                // message has fully unwound.
+                QTimer::singleShot(0, qApp, ShowMessageBox);
+            }
         }
 
         if (QtFatalMsg == type)
@@ -327,6 +376,22 @@ MApplication::MApplication(int &argc, char **argv)
     // The first inside own bundle where info.plist is works fine, but the second,
     // when we run inside Valentina's bundle, require direct setting the icon.
     setWindowIcon(QIcon(":/tapeicon/64x64/logo.png"));
+
+    // Connect once. RepopulateMeasurementsDatabase() runs on every known measurements directory change, and
+    // connecting there stacked up another copy of both connections each time.
+    connect(this,
+            &QCoreApplication::aboutToQuit,
+            m_knownMeasurementsRepopulateWatcher,
+            [this]()
+            {
+                m_knownMeasurementsRepopulateCanceled.storeRelease(1);
+                m_knownMeasurementsRepopulateWatcher->cancel();
+                m_knownMeasurementsRepopulateWatcher->waitForFinished();
+            });
+    connect(m_knownMeasurementsRepopulateWatcher,
+            &QFutureWatcher<void>::finished,
+            this,
+            &MApplication::SyncKnownMeasurements);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -360,6 +425,11 @@ MApplication::~MApplication()
 // reimplemented from QApplication so we can throw exceptions in slots
 auto MApplication::notify(QObject *receiver, QEvent *event) -> bool
 {
+    // Every catch below must call the qualified ::exit() (the C library one), not exit() unqualified. Inside
+    // a QCoreApplication-derived member function, unqualified exit() resolves to the inherited static slot
+    // QCoreApplication::exit(int), which does not terminate the process: it just flags the nearest event
+    // loop(s) to quit and returns control here. Control then keeps running on data that is known bad (the
+    // exception that got us into this catch), which crashed once teardown eventually caught up with it.
     try
     {
         return QApplication::notify(receiver, event);
@@ -369,38 +439,38 @@ auto MApplication::notify(QObject *receiver, QEvent *event) -> bool
         qCCritical(mApp, "%s\n\n%s\n\n%s",
                    qUtf8Printable(tr("Error parsing file. Program will be terminated.")), //-V807
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VExceptionBadId &e)
     {
         qCCritical(mApp, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error bad id. Program will be terminated.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VExceptionConversionError &e)
     {
         qCCritical(mApp, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error can't convert value. Program will be terminated.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VExceptionEmptyParameter &e)
     {
         qCCritical(mApp, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error empty parameter. Program will be terminated.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VExceptionWrongId &e)
     {
         qCCritical(mApp, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error wrong id. Program will be terminated.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VExceptionToolWasDeleted &e)
     {
         qCCritical(mApp, "%s\n\n%s\n\n%s",
                    qUtf8Printable(QStringLiteral("Unhadled deleting tool. Continue use object after deleting!")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (const VException &e)
     {
@@ -411,19 +481,19 @@ auto MApplication::notify(QObject *receiver, QEvent *event) -> bool
     catch (const qmu::QmuParserWarning &e)
     {
         qCCritical(mApp, "%s", qUtf8Printable(tr("Formula warning: %1. Program will be terminated.").arg(e.GetMsg())));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     // These last two cases special. I found that we can't show here modal dialog with error message.
     // Somehow program doesn't waite untile an error dialog will be closed. But if ignore this program will hang.
     catch (const qmu::QmuParserError &e)
     {
         qCCritical(mApp, "%s", qUtf8Printable(tr("Parser error: %1. Program will be terminated.").arg(e.GetMsg())));
-        exit(V_EX_DATAERR);
+        ::exit(V_EX_DATAERR);
     }
     catch (std::exception &e)
     {
         qCCritical(mApp, "%s", qUtf8Printable(tr("Exception thrown: %1. Program will be terminated.").arg(e.what())));
-        exit(V_EX_SOFTWARE);
+        ::exit(V_EX_SOFTWARE);
     }
     return false;
 }
@@ -485,15 +555,29 @@ void MApplication::InitOptions()
 
     CheckSystemLocale();
 
-    QTimer::singleShot(0, this,
-                       []()
-                       {
-                           QString const country = VGAnalytics::CountryCode();
-                           if (country == "by"_L1 || country == "ir"_L1)
+    // Command-line arguments are parsed later (ProcessCMD() is only scheduled after InitOptions()
+    // returns), so m_testMode isn't set yet here; check the raw arguments instead. --test runs the
+    // app headless and exits as soon as the file is processed, often before the country lookup's
+    // background network/TLS thread finishes; racing process exit against that thread corrupts the
+    // heap (crashes observed in CI). The lookup only gates GUI startup and collects usage stats, so
+    // skip it entirely in test mode.
+    if (not arguments().contains("--"_L1 + *LONG_OPTION_TEST))
+    {
+        QTimer::singleShot(0,
+                           this,
+                           []()
                            {
-                               QCoreApplication::exit();
-                           }
-                       });
+                               VGAnalytics::CheckCountryCodeAsync(
+                                   [](const QString &country)
+                                   {
+                                       const QString c = country.toLower();
+                                       if (c == "by"_L1 || c == "ir"_L1)
+                                       {
+                                           QCoreApplication::exit();
+                                       }
+                                   });
+                           });
+    }
 
     VTheme::InitApplicationStyle();
     VTheme::SetIconTheme();
@@ -603,6 +687,8 @@ auto MApplication::event(QEvent *e) -> bool
 //---------------------------------------------------------------------------------------------------------------------
 void MApplication::AboutToQuit()
 {
+    VAsyncFileIO::WaitForFileOperations(); // never tear down mid-write
+
     // If try to use the method QApplication::exit program can't sync settings and show warning about QApplication
     // instance. Solution is to call sync() before quit.
     // Connect this slot with VApplication::aboutToQuit.
@@ -613,14 +699,14 @@ void MApplication::AboutToQuit()
 void MApplication::OpenSettings()
 {
 #if defined(Q_OS_WIN)
-    QString const docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    if (!docPath.isEmpty())
+    if (QString const docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation); !docPath.isEmpty())
     {
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, docPath);
     }
 #endif
     settings = new VTapeSettings(QSettings::IniFormat, QSettings::UserScope, QCoreApplication::organizationName(),
                                  QCoreApplication::applicationName(), this);
+    settings->RemoveOversizedValues();
     connect(settings, &VTapeSettings::SVGFontsPathChanged, this, &MApplication::SVGFontsPathChanged);
     connect(settings, &VTapeSettings::KnownMeasurementsPathChanged, this, &MApplication::KnownMeasurementsPathChanged);
 }
@@ -951,21 +1037,14 @@ void MApplication::RepopulateMeasurementsDatabase(const QString &path)
             }
         }
 
-        connect(qApp,
-                &QCoreApplication::aboutToQuit,
-                m_knownMeasurementsRepopulateWatcher,
-                [this]()
-                {
-                    m_knownMeasurementsRepopulateWatcher->cancel();
-                    m_knownMeasurementsRepopulateWatcher->waitForFinished();
-                });
-        QObject::connect(m_knownMeasurementsRepopulateWatcher, &QFutureWatcher<void>::finished, this,
-                         &MApplication::SyncKnownMeasurements);
+        qCDebug(mApp, "Repopulating known measurements database (triggered by '%s').", qUtf8Printable(path));
+
         m_knownMeasurementsRepopulateWatcher->setFuture(QtConcurrent::run(
             [this]()
             {
-                if (m_knownMeasurementsRepopulateWatcher->isCanceled())
+                if (m_knownMeasurementsRepopulateCanceled.loadAcquire() != 0)
                 {
+                    qCDebug(mApp, "Known measurements repopulation canceled before it started.");
                     return;
                 }
 
@@ -987,6 +1066,10 @@ void MApplication::KnownMeasurementsPathChanged(const QString &oldPath, const QS
 //---------------------------------------------------------------------------------------------------------------------
 void MApplication::SyncKnownMeasurements()
 {
+    qCDebug(mApp,
+            "Syncing known measurements across %lld Tape window(s).",
+            static_cast<long long>(m_mainWindows.size()));
+
     for (const auto &w : std::as_const(m_mainWindows))
     {
         if (!w.isNull())
@@ -994,6 +1077,8 @@ void MApplication::SyncKnownMeasurements()
             w->SyncKnownMeasurements();
         }
     }
+
+    emit KnownMeasurementsDatabaseRefreshed();
 }
 
 //---------------------------------------------------------------------------------------------------------------------

@@ -116,7 +116,7 @@ void VToolLinePoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
  */
 void VToolLinePoint::RefreshGeometry()
 {
-    VToolSinglePoint::RefreshPointGeometry(*VDrawTool::data.GeometricObject<VPointF>(m_id));
+    VToolSinglePoint::RefreshGeometry();
     auto const point = static_cast<QPointF>(*VDrawTool::data.GeometricObject<VPointF>(m_id));
     auto const basePoint = static_cast<QPointF>(*VDrawTool::data.GeometricObject<VPointF>(basePointId));
     QLineF const line(basePoint - point, QPointF());
@@ -172,17 +172,6 @@ void VToolLinePoint::Enable()
 {
     VToolSinglePoint::Enable();
     mainLine->setEnabled(isEnabled());
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-/**
- * @brief FullUpdateFromFile update tool data form file.
- */
-void VToolLinePoint::FullUpdateFromFile()
-{
-    ReadAttributes();
-    RefreshGeometry();
-    SetVisualization();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -281,7 +270,7 @@ void VToolLinePoint::ProcessLinePointToolOptions(const QDomElement &oldDomElemen
 
     if (oldLabel != newLabel)
     {
-        auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
+        const auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
         connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
     }
 

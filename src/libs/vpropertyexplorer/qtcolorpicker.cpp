@@ -296,6 +296,10 @@ private:
 
     \sa QFrame
 */
+// Out-of-line destructor: keeps the scalar deleting destructor inside the DLL on MSVC,
+// preventing heap corruption when deleting via a base-class pointer from a consuming module.
+VPE::QtColorPicker::~QtColorPicker() = default;
+
 VPE::QtColorPicker::QtColorPicker(QWidget *parent, int columns, bool enableColorDialog, bool useNativeDialog)
   : QPushButton(parent),
     withColorDialog(enableColorDialog)
@@ -314,6 +318,9 @@ VPE::QtColorPicker::QtColorPicker(QWidget *parent, int columns, bool enableColor
     popup->setUseNativeDialog(useNativeDialog);
     connect(popup, &ColorPickerPopup::selected, this, &QtColorPicker::setCurrentColor);
     connect(popup, &ColorPickerPopup::hid, this, &QtColorPicker::popupClosed);
+    // On Windows, owned popup HWNDs can be destroyed by the OS before the Qt parent widget is
+    // deleted. Null out the raw pointer so insertCustomColor/insertColor guards catch it safely.
+    connect(popup, &QObject::destroyed, this, [this]() { popup = nullptr; });
 
     // Connect this push button's pressed() signal.
     connect(this, &QAbstractButton::toggled, this, &QtColorPicker::buttonPressed);
@@ -595,6 +602,11 @@ void VPE::QtColorPicker::insertColor(const QColor &color, const QString &text, i
 */
 void VPE::QtColorPicker::insertCustomColor(const QColor &color, int index)
 {
+    if (popup == nullptr)
+    {
+        return;
+    }
+
     popup->insertColor(color, color.name(), index, true);
     if (!firstInserted)
     {

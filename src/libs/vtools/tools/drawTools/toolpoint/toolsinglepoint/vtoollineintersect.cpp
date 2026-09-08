@@ -199,7 +199,7 @@ auto VToolLineIntersect::Create(VToolLineIntersectInitData initData) -> VToolLin
         VAbstractTool::AddRecord(initData.id, Tool::LineIntersect, initData.doc);
         auto *point = new VToolLineIntersect(initData);
         initData.scene->addItem(point);
-        InitToolConnections(initData.scene, point);
+        InitPointToolConnections(initData.scene, point);
         VAbstractPattern::AddTool(initData.id, point);
         return point;
     }
@@ -416,7 +416,7 @@ void VToolLineIntersect::ApplyToolOptions(const QDomElement &oldDomElement, cons
 
     if (oldLabel != newLabel)
     {
-        auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
+        const auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
         connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
     }
 

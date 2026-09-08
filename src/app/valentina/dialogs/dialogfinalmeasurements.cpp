@@ -36,9 +36,8 @@
 #include "../vpatterndb/calculator.h"
 #include "../vtools/dialogs/dialogtoolbox.h"
 #include "../vtools/dialogs/support/dialogeditwrongformula.h"
+#include "../vwidgets/vscrollablemenu.h"
 #include "ui_dialogfinalmeasurements.h"
-
-#include <QMenu>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -51,7 +50,7 @@ DialogFinalMeasurements::DialogFinalMeasurements(VPattern *doc, QWidget *parent)
     m_doc(doc),
     m_data(doc->GetCompleteData()),
     m_measurements(doc->GetFinalMeasurements()),
-    m_searchHistory(new QMenu(this))
+    m_searchHistory(new VScrollableMenu(this))
 {
     ui->setupUi(this);
 
@@ -880,7 +879,6 @@ void DialogFinalMeasurements::InitSearch()
                 m_search->Find(ui->lineEditFind->text());
             });
 
-    m_searchHistory->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
     InitSearchHistory();
     ui->pushButtonSearch->setMenu(m_searchHistory);
     ui->pushButtonSearch->setProperty("hasMenu", true);
@@ -893,18 +891,18 @@ void DialogFinalMeasurements::InitSearchHistory()
 {
     QStringList const searchHistory =
         VAbstractValApplication::VApp()->ValentinaSettings()->GetFinalMeasurementsSearchHistory();
-    m_searchHistory->clear();
+    m_searchHistory->Clear();
 
     if (searchHistory.isEmpty())
     {
-        QAction *action = m_searchHistory->addAction('<'_L1 + tr("Empty", "list") + '>'_L1);
+        QAction *action = m_searchHistory->AddAction('<'_L1 + tr("Empty", "list") + '>'_L1);
         action->setDisabled(true);
         return;
     }
 
     for (const auto &term : searchHistory)
     {
-        QAction *action = m_searchHistory->addAction(term);
+        QAction *action = m_searchHistory->AddAction(term);
         action->setData(term);
         connect(action, &QAction::triggered, this,
                 [this]()

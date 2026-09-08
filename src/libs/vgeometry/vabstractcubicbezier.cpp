@@ -89,8 +89,7 @@ auto PointBezier_r(QPointF p1, QPointF p2, QPointF p3, QPointF p4, qint16 level,
         return {};
     }
 
-    double m_distance_tolerance_square;
-
+    double m_distance_tolerance_square = 0;
     m_distance_tolerance_square = 0.5 / approximationScale;
     m_distance_tolerance_square *= m_distance_tolerance_square;
 
@@ -500,11 +499,19 @@ auto VAbstractCubicBezier::GetParmT(qreal length) const -> qreal
     constexpr qreal eps = ToPixel(0.00001, Unit::Mm);
     qreal parT = 0.5;
     qreal step = parT;
-    qreal splLength = 0;
 
-    do
+    forever
     {
-        splLength = RealLengthByT(parT);
+        const qreal splLength = RealLengthByT(parT);
+
+        // Check convergence for the *current* parT before nudging it any further. Stepping past
+        // this point and only then testing the old splLength would return a parT that was never
+        // actually verified against the target length.
+        if (qAbs(splLength - length) <= eps)
+        {
+            break;
+        }
+
         step /= 2.0;
 
         if (qFuzzyIsNull(step))
@@ -513,7 +520,7 @@ auto VAbstractCubicBezier::GetParmT(qreal length) const -> qreal
         }
 
         splLength > length ? parT -= step : parT += step;
-    } while (qAbs(splLength - length) > eps);
+    }
 
     return parT;
 }
@@ -566,6 +573,22 @@ auto VAbstractCubicBezier::HeadlessName() const -> QString
         name += u"_%1"_s.arg(GetDuplicate());
     }
     return name;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VAbstractCubicBezier::GetMidpoint() const -> VPointF
+{
+    QPointF spl1p2;
+    QPointF spl1p3;
+    QPointF spl2p2;
+    QPointF spl2p3;
+
+    const QPointF cutPoint = CutSplineAtParam(0.5, spl1p2, spl1p3, spl2p2, spl2p3);
+
+    VPointF pos(cutPoint);
+    pos.setId(id());
+    pos.setName(ObjectName());
+    return pos;
 }
 
 //---------------------------------------------------------------------------------------------------------------------

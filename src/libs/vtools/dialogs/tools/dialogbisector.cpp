@@ -70,6 +70,10 @@ DialogBisector::DialogBisector(const VContainer *data, VAbstractPattern *doc, qu
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxFirstPoint);
+    MakeFilterableComboBox(ui->comboBoxSecondPoint);
+    MakeFilterableComboBox(ui->comboBoxThirdPoint);
+
     m_timerFormula->setSingleShot(true);
     connect(m_timerFormula, &QTimer::timeout, this, &DialogBisector::EvalFormula);
 
@@ -94,7 +98,7 @@ DialogBisector::DialogBisector(const VContainer *data, VAbstractPattern *doc, qu
     connect(ui->lineEditNamePoint, &QLineEdit::textChanged, this,
             [this]()
             {
-                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, this->data,
+                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, &this->data,
                                 m_flagName);
                 CheckState();
             });
@@ -105,7 +109,7 @@ DialogBisector::DialogBisector(const VContainer *data, VAbstractPattern *doc, qu
     connect(ui->comboBoxSecondPoint, &QComboBox::currentTextChanged, this, &DialogBisector::PointNameChanged);
     connect(ui->comboBoxThirdPoint, &QComboBox::currentTextChanged, this, &DialogBisector::PointNameChanged);
 
-    vis = new VisToolBisector(data);
+    vis = new VisToolBisector(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -139,7 +143,7 @@ void DialogBisector::PointNameChanged()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogBisector::FXLength()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit length"));
     dialog->SetFormula(GetFormula());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -154,7 +158,7 @@ void DialogBisector::FXLength()
 void DialogBisector::EvalFormula()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditFormula,
           .labelResult = ui->labelResultCalculation,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -269,9 +273,14 @@ void DialogBisector::SetFormula(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(m_formula);
 
-    auto *line = qobject_cast<VisToolBisector *>(vis);
-    SCASSERT(line != nullptr)
-    line->SetLength(m_formula);
+    if (auto *line = qobject_cast<VisToolBisector *>(vis))
+    {
+        line->SetLength(m_formula);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
@@ -363,9 +372,9 @@ void DialogBisector::ShowDialog(bool click)
         auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
         SCASSERT(scene != nullptr)
 
-        const QSharedPointer<VPointF> p1 = data->GeometricObject<VPointF>(GetFirstPointId());
-        const QSharedPointer<VPointF> p2 = data->GeometricObject<VPointF>(GetSecondPointId());
-        const QSharedPointer<VPointF> p3 = data->GeometricObject<VPointF>(GetThirdPointId());
+        const QSharedPointer<VPointF> p1 = data.GeometricObject<VPointF>(GetFirstPointId());
+        const QSharedPointer<VPointF> p2 = data.GeometricObject<VPointF>(GetSecondPointId());
+        const QSharedPointer<VPointF> p3 = data.GeometricObject<VPointF>(GetThirdPointId());
 
         qreal const angle = VToolBisector::BisectorAngle(static_cast<QPointF>(*p1), static_cast<QPointF>(*p2),
                                                          static_cast<QPointF>(*p3));
@@ -382,7 +391,7 @@ void DialogBisector::ShowDialog(bool click)
             len *= -1;
         }
 
-        SetFormula(QString::number(FromPixel(len, *data->GetPatternUnit())));
+        SetFormula(QString::number(FromPixel(len, *data.GetPatternUnit())));
     }
 
     FinishCreating();

@@ -71,13 +71,14 @@ DialogCutSplinePath::DialogCutSplinePath(const VContainer *data, VAbstractPatter
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxSplinePath);
+
     m_timerFormula->setSingleShot(true);
     connect(m_timerFormula, &QTimer::timeout, this, &DialogCutSplinePath::EvalFormula);
 
     ui->lineEditNamePoint->setClearButtonEnabled(true);
 
-    ui->lineEditNamePoint->setText(
-        VAbstractValApplication::VApp()->getCurrentDocument()->GenerateLabel(LabelType::NewLabel));
+    SetPointName(VAbstractValApplication::VApp()->getCurrentDocument()->GenerateLabel(LabelType::NewLabel));
     this->m_formulaBaseHeight = ui->plainTextEditFormula->height();
     ui->plainTextEditFormula->installEventFilter(this);
 
@@ -92,7 +93,7 @@ DialogCutSplinePath::DialogCutSplinePath(const VContainer *data, VAbstractPatter
     connect(ui->lineEditNamePoint, &QLineEdit::textChanged, this,
             [this]()
             {
-                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, this->data,
+                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, &this->data,
                                 m_flagName);
                 CheckState();
             });
@@ -104,7 +105,7 @@ DialogCutSplinePath::DialogCutSplinePath(const VContainer *data, VAbstractPatter
     connect(ui->lineEditAlias1, &QLineEdit::textEdited, this, &DialogCutSplinePath::ValidateAlias);
     connect(ui->lineEditAlias2, &QLineEdit::textEdited, this, &DialogCutSplinePath::ValidateAlias);
 
-    vis = new VisToolCutSplinePath(data);
+    vis = new VisToolCutSplinePath(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -178,9 +179,14 @@ void DialogCutSplinePath::SetFormula(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(m_formula);
 
-    auto *path = qobject_cast<VisToolCutSplinePath *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetLength(m_formula);
+    if (auto *path = qobject_cast<VisToolCutSplinePath *>(vis))
+    {
+        path->SetLength(m_formula);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
@@ -276,7 +282,13 @@ void DialogCutSplinePath::changeEvent(QEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void DialogCutSplinePath::SplinePathChanged()
 {
-    CurrentCurveLength(getSplinePathId(), const_cast<VContainer *>(data));
+    CurrentCurveLength(getSplinePathId(), const_cast<VContainer *>(&data));
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void DialogCutSplinePath::RestoreTransientVariables()
+{
+    SplinePathChanged();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -292,7 +304,7 @@ void DialogCutSplinePath::ValidateAlias()
 
     if (not GetAliasSuffix1().isEmpty() &&
         (not rx.match(path1.GetAlias()).hasMatch() ||
-         (m_originAliasSuffix1 != GetAliasSuffix1() && not data->IsUnique(path1.GetAlias())) ||
+         (m_originAliasSuffix1 != GetAliasSuffix1() && not data.IsUnique(path1.GetAlias())) ||
          path1.GetAlias() == path2.GetAlias()))
     {
         m_flagAlias1 = false;
@@ -306,7 +318,7 @@ void DialogCutSplinePath::ValidateAlias()
 
     if (not GetAliasSuffix2().isEmpty() &&
         (not rx.match(path2.GetAlias()).hasMatch() ||
-         (m_originAliasSuffix2 != GetAliasSuffix2() && not data->IsUnique(path2.GetAlias())) ||
+         (m_originAliasSuffix2 != GetAliasSuffix2() && not data.IsUnique(path2.GetAlias())) ||
          path1.GetAlias() == path2.GetAlias()))
     {
         m_flagAlias2 = false;
@@ -333,7 +345,7 @@ void DialogCutSplinePath::ValidateCurveNames()
     splPath2.SetNameSuffix(GetName2());
 
     if (GetName1().isEmpty() || !rx.match(splPath1.name()).hasMatch()
-        || (m_originName1 != GetName1() && not data->IsUnique(splPath1.name())) || splPath1.name() == splPath2.name())
+        || (m_originName1 != GetName1() && not data.IsUnique(splPath1.name())) || splPath1.name() == splPath2.name())
     {
         m_flagCurveName1 = false;
         ChangeColor(ui->labelName1, errorColor);
@@ -345,7 +357,7 @@ void DialogCutSplinePath::ValidateCurveNames()
     }
 
     if (GetName2().isEmpty() || !rx.match(splPath2.name()).hasMatch()
-        || (m_originName2 != GetName2() && not data->IsUnique(splPath2.name())) || splPath1.name() == splPath2.name())
+        || (m_originName2 != GetName2() && not data.IsUnique(splPath2.name())) || splPath1.name() == splPath2.name())
     {
         m_flagCurveName2 = false;
         ChangeColor(ui->labelName2, errorColor);
@@ -355,6 +367,8 @@ void DialogCutSplinePath::ValidateCurveNames()
         m_flagCurveName2 = true;
         ChangeColor(ui->labelName2, OkColor(this));
     }
+
+    CheckState();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -379,13 +393,13 @@ void DialogCutSplinePath::InitIcons()
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogCutSplinePath::GenerateDefLeftSubName() const -> QString
 {
-    return GenerateDefSubCurveName(data, getSplinePathId(), "__ls"_L1, "LSubCurve"_L1, GetPointName());
+    return GenerateDefSubCurveName(&data, getSplinePathId(), "__ls"_L1, "LSubCurve"_L1, GetPointName());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogCutSplinePath::GenerateDefRightSubName() const -> QString
 {
-    return GenerateDefSubCurveName(data, getSplinePathId(), "__rs"_L1, "RSubCurve"_L1, GetPointName());
+    return GenerateDefSubCurveName(&data, getSplinePathId(), "__rs"_L1, "RSubCurve"_L1, GetPointName());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -397,7 +411,7 @@ void DialogCutSplinePath::DeployFormulaTextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogCutSplinePath::FXLength()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit length"));
     dialog->SetFormula(GetFormula());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -412,7 +426,7 @@ void DialogCutSplinePath::FXLength()
 void DialogCutSplinePath::EvalFormula()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditFormula,
           .labelResult = ui->labelResultCalculation,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -507,10 +521,10 @@ void DialogCutSplinePath::ShowDialog(bool click)
         SCASSERT(scene != nullptr)
 
         const QSharedPointer<VAbstractCubicBezierPath> curve =
-            data->GeometricObject<VAbstractCubicBezierPath>(getSplinePathId());
+            data.GeometricObject<VAbstractCubicBezierPath>(getSplinePathId());
         QPointF const p = curve->ClosestPoint(scene->getScenePos());
         qreal const len = curve->GetLengthByPoint(p);
-        SetFormula(QString::number(FromPixel(len, *data->GetPatternUnit())));
+        SetFormula(QString::number(FromPixel(len, *data.GetPatternUnit())));
     }
 
     FinishCreating();

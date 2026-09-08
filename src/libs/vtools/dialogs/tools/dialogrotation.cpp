@@ -28,13 +28,16 @@
 
 #include "dialogrotation.h"
 
+#include <QAbstractButton>
 #include <QColor>
 #include <QComboBox>
 #include <QCompleter>
 #include <QDialog>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLineF>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPointF>
 #include <QPointer>
@@ -50,7 +53,6 @@
 #include "../../visualization/visualization.h"
 #include "../ifc/xml/vabstractpattern.h"
 #include "../qmuparser/qmudef.h"
-#include "../support/dialogbulkrename.h"
 #include "../support/dialogeditwrongformula.h"
 #include "../vgeometry/vpointf.h"
 #include "../vmisc/theme/vtheme.h"
@@ -59,8 +61,10 @@
 #include "../vmisc/vvalentinasettings.h"
 #include "../vpatterndb/vcontainer.h"
 #include "../vpatterndb/vtranslatevars.h"
+#include "../vpropertyexplorer/qtcolorpicker.h"
 #include "../vwidgets/global.h"
 #include "../vwidgets/vabstractmainwindow.h"
+#include "../vwidgets/vlineedit.h"
 #include "../vwidgets/vmaingraphicsscene.h"
 #include "../vwidgets/vmaingraphicsview.h"
 #include "ui_dialogrotation.h"
@@ -73,13 +77,15 @@ using namespace Qt::Literals::StringLiterals;
 
 //---------------------------------------------------------------------------------------------------------------------
 DialogRotation::DialogRotation(const VContainer *data, VAbstractPattern *doc, quint32 toolId, QWidget *parent)
-  : DialogTool(data, doc, toolId, parent),
+  : DialogOperationTool(data, doc, toolId, parent),
     ui(new Ui::DialogRotation),
     timerAngle(new QTimer(this))
 {
     ui->setupUi(this);
 
     InitIcons();
+
+    MakeFilterableComboBox(ui->comboBoxNewObject);
 
     this->formulaBaseHeightAngle = ui->plainTextEditFormula->height();
     ui->plainTextEditFormula->installEventFilter(this);
@@ -88,6 +94,8 @@ DialogRotation::DialogRotation(const VContainer *data, VAbstractPattern *doc, qu
     connect(timerAngle, &QTimer::timeout, this, &DialogRotation::EvalAngle);
 
     InitOkCancelApply(ui);
+
+    FillComboBoxObjectTypes(ui->comboBoxObjectType);
 
     FillComboBoxPoints(ui->comboBoxOriginPoint);
     FillComboBoxTypeLine(ui->comboBoxPenStyle,
@@ -98,21 +106,37 @@ DialogRotation::DialogRotation(const VContainer *data, VAbstractPattern *doc, qu
                              VAbstractValApplication::VApp()->ValentinaSettings()->GetUserToolColors());
     ui->pushButtonColor->setUseNativeDialog(!VAbstractApplication::VApp()->Settings()->IsDontUseNativeDialog());
 
-    connect(ui->lineEditVisibilityGroup, &QLineEdit::textChanged, this, &DialogRotation::GroupNameChanged);
+    connect(ui->lineEditVisibilityGroup, &QLineEdit::textChanged, this, &DialogOperationTool::GroupNameChanged);
     connect(ui->toolButtonExprAngle, &QPushButton::clicked, this, &DialogRotation::FXAngle);
-    connect(ui->plainTextEditFormula, &QPlainTextEdit::textChanged, this,
-            [this]() { timerAngle->start(formulaTimerTimeout); });
+    connect(ui->plainTextEditFormula,
+            &QPlainTextEdit::textChanged,
+            this,
+            [this]() -> void { timerAngle->start(formulaTimerTimeout); });
     connect(ui->pushButtonGrowLength, &QPushButton::clicked, this, &DialogRotation::DeployAngleTextEdit);
     connect(ui->comboBoxOriginPoint, &QComboBox::currentTextChanged, this, &DialogRotation::PointChanged);
 
-    connect(ui->listWidget, &QListWidget::currentRowChanged, this, &DialogRotation::ShowSourceDetails);
-    connect(ui->lineEditName, &QLineEdit::textEdited, this, &DialogRotation::NameChanged);
+    connect(ui->listWidget, &QListWidget::currentRowChanged, this, &DialogOperationTool::ShowSourceDetails);
+    connect(ui->listWidget, &QListWidget::currentRowChanged, this, &DialogOperationTool::CurrentObjectChanged);
+    connect(ui->lineEditName, &QLineEdit::textEdited, this, &DialogOperationTool::NameChanged);
     connect(ui->comboBoxPenStyle, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            &DialogRotation::PenStyleChanged);
-    connect(ui->pushButtonColor, &VPE::QtColorPicker::colorChanged, this, &DialogRotation::ColorChanged);
-    connect(ui->toolButtonBulkRename, &QToolButton::clicked, this, &DialogRotation::BulkRename);
+            &DialogOperationTool::PenStyleChanged);
+    connect(ui->pushButtonColor, &VPE::QtColorPicker::colorChanged, this, &DialogOperationTool::ColorChanged);
+    connect(ui->toolButtonBulkRename, &QToolButton::clicked, this, &DialogOperationTool::BulkRename);
 
-    vis = new VisToolRotation(data);
+    connect(ui->comboBoxObjectType,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this,
+            &DialogOperationTool::ObjectTypeChanged);
+    connect(ui->comboBoxNewObject,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this,
+            &DialogOperationTool::NewObjectChanged);
+    connect(ui->toolButtonNewObject, &QPushButton::clicked, this, &DialogOperationTool::AddNewObject);
+    connect(ui->toolButtonRemoveObject, &QPushButton::clicked, this, &DialogOperationTool::RemoveObject);
+
+    ObjectTypeChanged(ui->comboBoxObjectType->currentIndex());
+
+    vis = new VisToolRotation(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -123,6 +147,26 @@ DialogRotation::~DialogRotation()
 {
     VAbstractValApplication::VApp()->ValentinaSettings()->SetUserToolColors(ui->pushButtonColor->CustomColors());
     delete ui;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto DialogRotation::Widgets() const -> OperationWidgets
+{
+    return {.sourceList = ui->listWidget,
+            .name = ui->lineEditName,
+            .labelName = ui->labelName,
+            .labelStatus = ui->labelStatus,
+            .labelGroupName = ui->labelGroupName,
+            .penStyle = ui->comboBoxPenStyle,
+            .color = ui->pushButtonColor,
+            .objectType = ui->comboBoxObjectType,
+            .newObject = ui->comboBoxNewObject,
+            .addObject = ui->toolButtonNewObject,
+            .removeObject = ui->toolButtonRemoveObject,
+            .notes = ui->plainTextEditToolNotes,
+            .groupTags = ui->lineEditGroupTags,
+            .visibilityGroupLine = ui->lineEditVisibilityGroup,
+            .visibilityGroup = ui->groupBoxVisibilityGroup};
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -158,67 +202,29 @@ void DialogRotation::SetAngle(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(formulaAngle);
 
-    auto *operation = qobject_cast<VisToolRotation *>(vis);
-    SCASSERT(operation != nullptr)
-    operation->SetAngle(formulaAngle);
+    if (auto *operation = qobject_cast<VisToolRotation *>(vis))
+    {
+        operation->SetAngle(formulaAngle);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::GetVisibilityGroupName() const -> QString
-{
-    return ui->lineEditVisibilityGroup->text();
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetVisibilityGroupName(const QString &name)
-{
-    ui->lineEditVisibilityGroup->setText(name.isEmpty() ? tr("Rotation") : name);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::HasLinkedVisibilityGroup() const -> bool
-{
-    return ui->groupBoxVisibilityGroup->isChecked();
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetHasLinkedVisibilityGroup(bool linked)
-{
-    ui->groupBoxVisibilityGroup->setChecked(linked);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetVisibilityGroupTags(const QStringList &tags)
-{
-    ui->lineEditGroupTags->setText(tags.join(", "));
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::GetVisibilityGroupTags() const -> QStringList
-{
-    return ui->lineEditGroupTags->text().split(',');
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetGroupCategories(const QStringList &categories)
-{
-    m_groupTags = categories;
-    ui->lineEditGroupTags->SetCompletion(m_groupTags);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::ShowDialog(bool click)
 {
-    if (stage1 && not click)
+    if (IsStage1() && not click)
     {
-        if (m_sourceObjects.isEmpty())
+        if (SourceObjects().isEmpty())
         {
             return;
         }
 
-        stage1 = false;
+        SetStage1(false);
 
         auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
         SCASSERT(scene != nullptr)
@@ -226,13 +232,12 @@ void DialogRotation::ShowDialog(bool click)
 
         auto *operation = qobject_cast<VisToolRotation *>(vis);
         SCASSERT(operation != nullptr)
-        operation->SetObjects(SourceToObjects(m_sourceObjects));
-        operation->VisualMode(NULL_ID);
+        operation->StartAction();
 
-        scene->ToggleArcSelection(false);
-        scene->ToggleElArcSelection(false);
-        scene->ToggleSplineSelection(false);
-        scene->ToggleSplinePathSelection(false);
+        scene->ToggleArcSegmentVisibility(false);
+        scene->ToggleElArcSegmentVisibility(false);
+        scene->ToggleSplineSegmentVisibility(false);
+        scene->ToggleSplinePathSegmentVisibility(false);
 
         scene->ToggleArcHover(false);
         scene->ToggleElArcHover(false);
@@ -241,12 +246,12 @@ void DialogRotation::ShowDialog(bool click)
 
         VAbstractValApplication::VApp()->getSceneView()->AllowRubberBand(false);
 
-        FillDefSourceNames(m_sourceObjects, data, "r"_L1);
+        FillDefSourceNames(SourceObjects(), &data, "r"_L1);
         FillSourceList();
 
         emit ToolTip(tr("Select origin point"));
     }
-    else if (not stage1 && prepare && click)
+    else if (not IsStage1() && prepare && click)
     {
         // The check need to ignore first release of mouse button.
         // User can select point by clicking on a label.
@@ -261,7 +266,7 @@ void DialogRotation::ShowDialog(bool click)
         SCASSERT(scene != nullptr)
         try
         {
-            const QSharedPointer<VPointF> point = data->GeometricObject<VPointF>(GetOrigPointId());
+            const QSharedPointer<VPointF> point = data.GeometricObject<VPointF>(GetOrigPointId());
             const auto line = QLineF(static_cast<QPointF>(*point), scene->getScenePos());
 
             // Radius of point circle, but little bigger. Need handle with hover sizes.
@@ -287,49 +292,50 @@ void DialogRotation::ShowDialog(bool click)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::GetSourceObjects() const -> QVector<SourceItem>
-{
-    return m_sourceObjects;
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetSourceObjects(const QVector<SourceItem> &value)
-{
-    m_sourceObjects = value;
-    FillSourceList();
-
-    auto *operation = qobject_cast<VisToolRotation *>(vis);
-    SCASSERT(operation != nullptr)
-    operation->SetObjects(SourceToObjects(m_sourceObjects));
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::CheckDependencyTreeComplete()
-{
-    m_dependencyReady = m_doc->IsPatternGraphComplete();
-    ui->lineEditName->setEnabled(m_dependencyReady);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::ChosenObject(quint32 id, const SceneObject &type)
 {
-    if (not stage1 && not prepare && type == SceneObject::Point) // After first choose we ignore all objects
+    if (IsStage1())
+    {
+        if (auto obj = std::find_if(SourceObjects().begin(),
+                                    SourceObjects().end(),
+                                    [id](const SourceItem &sItem) { return sItem.id == id; });
+            obj == SourceObjects().end())
+        {
+            SourceObjects().push_back(SourceItem{id});
+        }
+        else
+        {
+            SourceObjects().erase(obj);
+        }
+
+        auto *operation = qobject_cast<VisToolRotation *>(vis);
+        SCASSERT(operation != nullptr)
+        operation->SetObjects(SourceToObjects(SourceObjects()));
+        if (!VAbstractValApplication::VApp()->getCurrentScene()->items().contains(operation))
+        {
+            operation->VisualMode(NULL_ID);
+        }
+        else
+        {
+            operation->RefreshGeometry();
+        }
+    }
+    else if (not prepare && type == SceneObject::Point) // After first choose we ignore all objects
     {
         auto *operation = qobject_cast<VisToolRotation *>(vis);
         SCASSERT(operation != nullptr)
 
-        auto obj = std::find_if(m_sourceObjects.begin(),
-                                m_sourceObjects.end(),
-                                [id](const SourceItem &sItem) { return sItem.id == id; });
-
-        if (obj != m_sourceObjects.end())
+        if (auto obj = std::find_if(SourceObjects().begin(),
+                                    SourceObjects().end(),
+                                    [id](const SourceItem &sItem) { return sItem.id == id; });
+            obj != SourceObjects().end())
         {
-            if (m_sourceObjects.size() > 1)
+            if (SourceObjects().size() > 1)
             {
                 // It's not really logical for a user that a center of rotation no need to select.
                 // To fix this issue we just silently remove it from the list.
-                m_sourceObjects.erase(obj);
-                operation->SetObjects(SourceToObjects(m_sourceObjects));
+                SourceObjects().erase(obj);
+                operation->SetObjects(SourceToObjects(SourceObjects()));
             }
             else
             {
@@ -353,34 +359,6 @@ void DialogRotation::ChosenObject(quint32 id, const SceneObject &type)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SelectedObject(bool selected, quint32 object, quint32 tool)
-{
-    Q_UNUSED(tool)
-    if (stage1)
-    {
-        auto obj = std::find_if(m_sourceObjects.begin(),
-                                m_sourceObjects.end(),
-                                [object](const SourceItem &sItem) { return sItem.id == object; });
-        if (selected)
-        {
-            if (obj == m_sourceObjects.end())
-            {
-                SourceItem item{};
-                item.id = object;
-                m_sourceObjects.append(item);
-            }
-        }
-        else
-        {
-            if (obj != m_sourceObjects.end())
-            {
-                m_sourceObjects.erase(obj);
-            }
-        }
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::DeployAngleTextEdit()
 {
     DeployFormula(this, ui->plainTextEditFormula, ui->pushButtonGrowLength, formulaBaseHeightAngle);
@@ -389,7 +367,7 @@ void DialogRotation::DeployAngleTextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::FXAngle()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit angle"));
     dialog->SetFormula(GetAngle());
     dialog->setPostfix(degreeSymbol);
@@ -401,24 +379,17 @@ void DialogRotation::FXAngle()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::GroupNameChanged()
+void DialogRotation::OnSourceObjectsSet()
 {
-    if (const auto *edit = qobject_cast<QLineEdit *>(sender()); edit)
+    if (auto *operation = qobject_cast<VisToolRotation *>(vis))
     {
-        const QString name = edit->text();
-        if (name.isEmpty())
-        {
-            flagGroupName = false;
-            ChangeColor(ui->labelGroupName, errorColor);
-            ui->labelStatus->setText(tr("Invalid group name"));
-            CheckState();
-            return;
-        }
-
-        flagGroupName = true;
-        ChangeColor(ui->labelGroupName, OkColor(this));
+        operation->SetObjects(SourceToObjects(SourceObjects()));
+        operation->RefreshGeometry();
     }
-    CheckState();
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -431,27 +402,30 @@ void DialogRotation::ShowVisualization()
 void DialogRotation::SaveData()
 {
     formulaAngle = ui->plainTextEditFormula->toPlainText();
-    m_sourceObjects = SaveSourceObjects();
+    SourceObjects() = SaveSourceObjects();
 
-    auto *operation = qobject_cast<VisToolRotation *>(vis);
-    SCASSERT(operation != nullptr)
+    if (!vis.isNull())
+    {
+        auto *operation = qobject_cast<VisToolRotation *>(vis);
+        SCASSERT(operation != nullptr)
 
-    operation->SetObjects(SourceToObjects(m_sourceObjects));
-    operation->SetOriginPointId(GetOrigPointId());
-    operation->SetAngle(formulaAngle);
-    operation->RefreshGeometry();
+        operation->SetObjects(SourceToObjects(SourceObjects()));
+        operation->SetOriginPointId(GetOrigPointId());
+        operation->SetAngle(formulaAngle);
+        operation->RefreshGeometry();
+    }
 
     QStringList groupTags = ui->lineEditGroupTags->text().split(',');
     for (auto &tag : groupTags)
     {
         tag = tag.trimmed();
-        if (not m_groupTags.contains(tag))
+        if (not GroupTags().contains(tag))
         {
-            m_groupTags.append(tag);
+            GroupTags().append(tag);
         }
     }
 
-    ui->lineEditGroupTags->SetCompletion(m_groupTags);
+    ui->lineEditGroupTags->SetCompletion(GroupTags());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -482,52 +456,25 @@ void DialogRotation::changeEvent(QEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::PointChanged()
 {
+    QColor color;
     quint32 const id = getCurrentObjectId(ui->comboBoxOriginPoint);
 
-    auto obj = std::find_if(m_sourceObjects.begin(),
-                            m_sourceObjects.end(),
-                            [id](const SourceItem &sItem) { return sItem.id == id; });
-
-    QColor color;
-    if (obj != m_sourceObjects.end())
+    if (auto obj = std::find_if(SourceObjects().begin(),
+                                SourceObjects().end(),
+                                [id](const SourceItem &sItem) { return sItem.id == id; });
+        obj != SourceObjects().end())
     {
-        flagError = false;
+        SetFlagError(false);
         color = errorColor;
         ui->labelStatus->setText(tr("Invalid rotation point"));
     }
     else
     {
-        flagError = true;
+        SetFlagError(true);
         color = OkColor(this);
     }
     ChangeColor(ui->labelOriginPoint, color);
     CheckState();
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::FillSourceList()
-{
-    QSignalBlocker blocker(ui->listWidget);
-
-    ui->listWidget->clear();
-
-    int row = -1;
-
-    for (const auto &sourceItem : std::as_const(m_sourceObjects))
-    {
-        const QSharedPointer<VGObject> obj = data->GetGObject(sourceItem.id);
-        auto *item = new QListWidgetItem(obj->ObjectName());
-        item->setToolTip(obj->ObjectName());
-        item->setData(Qt::UserRole, QVariant::fromValue(sourceItem));
-        ui->listWidget->insertItem(++row, item);
-    }
-
-    blocker.unblock();
-
-    if (ui->listWidget->count() > 0)
-    {
-        ui->listWidget->setCurrentRow(0);
-    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -540,28 +487,10 @@ void DialogRotation::InitIcons()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::SaveSourceObjects() const -> QVector<SourceItem>
-{
-    QVector<SourceItem> objects;
-    objects.reserve(ui->listWidget->count());
-
-    for (int i = 0; i < ui->listWidget->count(); ++i)
-    {
-        if (const QListWidgetItem *item = ui->listWidget->item(i))
-        {
-            const auto sourceItem = qvariant_cast<SourceItem>(item->data(Qt::UserRole));
-            objects.append(sourceItem);
-        }
-    }
-
-    return objects;
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 void DialogRotation::EvalAngle()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditAngle,
           .labelResult = ui->labelResultAngle,
           .postfix = degreeSymbol},
@@ -574,176 +503,9 @@ void DialogRotation::EvalAngle()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::ShowSourceDetails(int row)
-{
-    ui->lineEditName->setDisabled(true);
-    ui->comboBoxPenStyle->setDisabled(true);
-    ui->pushButtonColor->setDisabled(true);
-
-    if (ui->listWidget->count() == 0)
-    {
-        return;
-    }
-
-    auto *item = ui->listWidget->item(row);
-    if (item == nullptr)
-    {
-        return;
-    }
-
-    const auto sourceItem = qvariant_cast<SourceItem>(item->data(Qt::UserRole));
-
-    const QSharedPointer<VGObject> obj = data->GetGObject(sourceItem.id);
-
-    if (obj->getType() == GOType::Point)
-    {
-        const QSignalBlocker blockerPenStyle(ui->comboBoxPenStyle);
-        const QSignalBlocker blockerColor(ui->pushButtonColor);
-
-        ui->comboBoxPenStyle->setCurrentIndex(-1);
-        ui->pushButtonColor->setCurrentColor(QColor());
-    }
-    else
-    {
-        auto SetValue = [](QComboBox *box, const QString &value, const QString &def)
-        {
-            const QSignalBlocker blocker(box);
-
-            if (int const index = box->findData(value); index != -1)
-            {
-                box->setCurrentIndex(index);
-            }
-            else
-            {
-                box->setCurrentIndex(box->findData(def));
-            }
-        };
-
-        SetValue(ui->comboBoxPenStyle, sourceItem.penStyle, TypeLineDefault);
-
-        if (sourceItem.penStyle.isEmpty() || sourceItem.penStyle == TypeLineDefault)
-        {
-            int const index = ui->comboBoxPenStyle->currentIndex();
-            ui->comboBoxPenStyle->setItemText(index, '<' + tr("Default") + '>');
-        }
-
-        QSignalBlocker blockerColor(ui->pushButtonColor);
-        QColor const color(sourceItem.color);
-        ui->pushButtonColor->setCurrentColor(color.isValid() ? color : ColorDefault);
-        blockerColor.unblock();
-
-        if (sourceItem.color.isEmpty() || sourceItem.color == ColorDefault)
-        {
-            const QSharedPointer<VAbstractCurve> curve = data->GeometricObject<VAbstractCurve>(sourceItem.id);
-            ui->pushButtonColor->setDefaultColor(curve->GetColor());
-        }
-
-        ui->comboBoxPenStyle->setEnabled(true);
-        ui->pushButtonColor->setEnabled(true);
-    }
-
-    const QSignalBlocker blockerName(ui->lineEditName);
-    ui->lineEditName->setText(sourceItem.name);
-    ui->lineEditName->setEnabled(m_dependencyReady);
-
-    const bool nameValid = IsValidSourceName(sourceItem.name, sourceItem.id, m_sourceObjects, data);
-    ChangeColor(ui->labelName, nameValid ? OkColor(this) : errorColor);
-    flagName = nameValid;
-    CheckState();
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::NameChanged(const QString &text)
-{
-    if (ui->listWidget->count() == 0)
-    {
-        return;
-    }
-
-    if (auto *item = ui->listWidget->currentItem())
-    {
-        auto sourceItem = qvariant_cast<SourceItem>(item->data(Qt::UserRole));
-
-        const QVector<SourceItem> objects = SaveSourceObjects();
-        const bool valid = IsValidSourceName(text, sourceItem.id, objects, data);
-
-        if (valid)
-        {
-            sourceItem.name = text;
-            item->setData(Qt::UserRole, QVariant::fromValue(sourceItem));
-        }
-
-        const QSharedPointer<VGObject> obj = data->GetGObject(sourceItem.id);
-        ChangeColor(ui->labelName, valid ? OkColor(this) : errorColor);
-
-        if (!valid)
-        {
-            ui->labelStatus->setText(obj->getType() == GOType::Point ? tr("Invalid label") : tr("Invalid name"));
-        }
-
-        flagName = valid;
-        CheckState();
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::PenStyleChanged()
-{
-    if (ui->listWidget->count() == 0)
-    {
-        return;
-    }
-
-    if (auto *item = ui->listWidget->currentItem())
-    {
-        auto sourceItem = qvariant_cast<SourceItem>(item->data(Qt::UserRole));
-        sourceItem.penStyle = GetComboBoxCurrentData(ui->comboBoxPenStyle, TypeLineDefault);
-        item->setData(Qt::UserRole, QVariant::fromValue(sourceItem));
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::ColorChanged()
-{
-    if (ui->listWidget->count() == 0)
-    {
-        return;
-    }
-
-    if (auto *item = ui->listWidget->currentItem())
-    {
-        auto sourceItem = qvariant_cast<SourceItem>(item->data(Qt::UserRole));
-        QColor const color = ui->pushButtonColor->currentColor();
-        sourceItem.color = color.isValid() ? color.name() : ColorDefault;
-        item->setData(Qt::UserRole, QVariant::fromValue(sourceItem));
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::BulkRename()
-{
-    if (DialogBulkRename dlg(m_sourceObjects, data, this); dlg.exec() == QDialog::Accepted && dlg.HasChanges())
-    {
-        SetSourceObjects(dlg.RenamedItems());
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void DialogRotation::SetNotes(const QString &notes)
-{
-    ui->plainTextEditToolNotes->setPlainText(notes);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto DialogRotation::GetNotes() const -> QString
-{
-    return ui->plainTextEditToolNotes->toPlainText();
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 auto DialogRotation::IsValid() const -> bool
 {
-    bool const ready = flagAngle && flagName && flagError && flagGroupName;
+    bool const ready = flagAngle && IsFlagName() && IsFlagError() && IsFlagGroupName();
 
     if (ready)
     {

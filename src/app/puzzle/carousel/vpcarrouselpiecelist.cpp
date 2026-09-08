@@ -157,7 +157,7 @@ void VPCarrouselPieceList::startDrag(Qt::DropActions supportedActions)
     Q_UNUSED(supportedActions)
 
     QListWidgetItem *_item = currentItem();
-    if (_item->type() == VPCarrouselPiece::Type)
+    if (_item != nullptr && _item->type() == VPCarrouselPiece::Type)
     {
         auto *pieceItem = dynamic_cast<VPCarrouselPiece *>(_item);
         SCASSERT(pieceItem != nullptr)
@@ -222,9 +222,13 @@ void VPCarrouselPieceList::contextMenuEvent(QContextMenuEvent *event)
     SCASSERT(pieceItem != nullptr)
 
     VPPiecePtr const piece = pieceItem->GetPiece();
-    VPLayoutPtr const layout = piece->Layout();
+    if (piece.isNull())
+    {
+        return;
+    }
 
-    if (piece.isNull() || layout.isNull())
+    VPLayoutPtr const layout = piece->Layout();
+    if (layout.isNull())
     {
         return;
     }

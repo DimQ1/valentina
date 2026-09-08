@@ -55,6 +55,8 @@ DialogParallelCurve::DialogParallelCurve(const VContainer *data, VAbstractPatter
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxCurve);
+
     this->m_formulaBaseHeightWidth = ui->plainTextEditWidth->height();
 
     ui->plainTextEditWidth->installEventFilter(this);
@@ -86,7 +88,7 @@ DialogParallelCurve::DialogParallelCurve(const VContainer *data, VAbstractPatter
     connect(ui->lineEditName, &QLineEdit::textEdited, this, &DialogParallelCurve::ValidateName);
     connect(ui->lineEditAlias, &QLineEdit::textEdited, this, &DialogParallelCurve::ValidateAlias);
 
-    vis = new VisToolParallelCurve(data);
+    vis = new VisToolParallelCurve(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -133,9 +135,14 @@ void DialogParallelCurve::SetFormulaWidth(const QString &value)
     }
     ui->plainTextEditWidth->setPlainText(m_width);
 
-    auto *path = qobject_cast<VisToolParallelCurve *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetOffsetWidth(m_width);
+    if (auto *path = qobject_cast<VisToolParallelCurve *>(vis))
+    {
+        path->SetOffsetWidth(m_width);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditWidth);
 }
@@ -241,7 +248,7 @@ void DialogParallelCurve::ShowDialog(bool click)
         auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
         SCASSERT(scene != nullptr)
 
-        const QSharedPointer<VAbstractCurve> curve = data->GeometricObject<VAbstractCurve>(GetOriginCurveId());
+        const QSharedPointer<VAbstractCurve> curve = data.GeometricObject<VAbstractCurve>(GetOriginCurveId());
         QPointF const p = curve->ClosestPoint(scene->getScenePos());
 
         auto const line = QLineF(p, scene->getScenePos());
@@ -256,7 +263,7 @@ void DialogParallelCurve::ShowDialog(bool click)
             len = -len;
         }
 
-        SetFormulaWidth(QString::number(FromPixel(len, *data->GetPatternUnit())));
+        SetFormulaWidth(QString::number(FromPixel(len, *data.GetPatternUnit())));
     }
 
     FinishCreating();
@@ -288,7 +295,7 @@ void DialogParallelCurve::ChosenObject(quint32 id, const SceneObject &type)
         }
         prepare = true;
 
-        SetName(GenerateDefOffsetCurveName(data, GetOriginCurveId(), "__o"_L1, "Curve"_L1 + offset_));
+        SetName(GenerateDefOffsetCurveName(&data, GetOriginCurveId(), "__o"_L1, "Curve"_L1 + offset_));
 
         auto *window = qobject_cast<VAbstractMainWindow *>(VAbstractValApplication::VApp()->getMainWindow());
         SCASSERT(window != nullptr)
@@ -310,7 +317,7 @@ void DialogParallelCurve::DeployWidthTextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogParallelCurve::FXWidth()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit width to parallel curve"));
     dialog->SetFormula(GetFormulaWidth());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -369,12 +376,12 @@ void DialogParallelCurve::changeEvent(QEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void DialogParallelCurve::ValidateName()
 {
-    const QSharedPointer<VAbstractCurve> curve = data->GeometricObject<VAbstractCurve>(GetOriginCurveId());
+    const QSharedPointer<VAbstractCurve> curve = data.GeometricObject<VAbstractCurve>(GetOriginCurveId());
     const QString namePrefix = GetName();
     VSplinePath const splPath = curve->Offset(0, namePrefix);
 
     if (QRegularExpression const rx(NameRegExp()); namePrefix.isEmpty() || not rx.match(splPath.name()).hasMatch()
-                                                   || (m_originName != namePrefix && not data->IsUnique(splPath.name())))
+                                                   || (m_originName != namePrefix && not data.IsUnique(splPath.name())))
     {
         m_flagName = false;
         ChangeColor(ui->labelName, errorColor);
@@ -391,14 +398,14 @@ void DialogParallelCurve::ValidateName()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogParallelCurve::ValidateAlias()
 {
-    const QSharedPointer<VAbstractCurve> curve = data->GeometricObject<VAbstractCurve>(GetOriginCurveId());
+    const QSharedPointer<VAbstractCurve> curve = data.GeometricObject<VAbstractCurve>(GetOriginCurveId());
     VSplinePath splPath = curve->Offset(0, GetName());
 
     splPath.SetAliasSuffix(GetAliasSuffix());
     if (QRegularExpression const rx(NameRegExp());
         not GetAliasSuffix().isEmpty()
         && (not rx.match(splPath.GetAlias()).hasMatch()
-            || (m_originAliasSuffix != GetAliasSuffix() && not data->IsUnique(splPath.GetAlias()))))
+            || (m_originAliasSuffix != GetAliasSuffix() && not data.IsUnique(splPath.GetAlias()))))
     {
         m_flagAlias = false;
         ChangeColor(ui->labelAlias, errorColor);
@@ -416,7 +423,7 @@ void DialogParallelCurve::ValidateAlias()
 void DialogParallelCurve::Width()
 {
     Eval({.formula = ui->plainTextEditWidth->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditWidth,
           .labelResult = ui->labelResultWidth,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},

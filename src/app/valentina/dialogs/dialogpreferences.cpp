@@ -43,12 +43,19 @@
 //---------------------------------------------------------------------------------------------------------------------
 DialogPreferences::DialogPreferences(QWidget *parent)
   : QDialog(parent),
-    ui(new Ui::DialogPreferences),
-    m_configurePage(new PreferencesConfigurationPage),
-    m_patternPage(new PreferencesPatternPage),
-    m_pathPage(new PreferencesPathPage)
+    ui(new Ui::DialogPreferences)
 {
+    // setupUi() must run before the pages are built. The page constructors do real work (font
+    // databases, pixmap previews, settings) and can reenter the event loop; changeEvent() then runs
+    // on this dialog and dereferences ui->buttonBox, which holds indeterminate garbage until
+    // setupUi() assigns it. That is the crash a 1.0.4 report landed on: a bogus screen DPI made the
+    // single line font preview log a warning, the warning opened a modal box synchronously, and the
+    // queued QEvent::PaletteChange delivered inside it reached ui->buttonBox->button().
     ui->setupUi(this);
+
+    m_configurePage = new PreferencesConfigurationPage;
+    m_patternPage = new PreferencesPatternPage;
+    m_pathPage = new PreferencesPathPage;
 
 #if defined(Q_OS_MAC)
     setWindowFlags(Qt::Window);
@@ -151,6 +158,13 @@ void DialogPreferences::Apply()
     preferences += m_configurePage->Apply();
     preferences += m_patternPage->Apply();
     preferences += m_pathPage->Apply();
+
+    if (m_patternPage->IsCurveApproximationScaleChanged())
+    {
+        // Curve length/geometry depends on this value. Existing curves and everything computed from
+        // them (cached length variables, points cut by length, etc.) need a full reparse to pick it up.
+        emit RequestFullParse();
+    }
 
     if (not preferences.isEmpty())
     {

@@ -28,8 +28,8 @@
 
 #include "vdomdocument.h"
 
-#include <QSaveFile>
 #include <qdom.h>
+#include <QSaveFile>
 
 #include "../exception/vexceptionbadid.h"
 #include "../exception/vexceptionconversionerror.h"
@@ -38,19 +38,27 @@
 #include "../ifcdef.h"
 #include "../vmisc/compatibility.h"
 #include "../vmisc/exception/vexception.h"
+#include "../vmisc/vasyncfileio.h"
+#include "vparsererrorhandler.h"
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <xercesc/framework/MemBufInputSource.hpp>
+#include <xercesc/parsers/XercesDOMParser.hpp>
+#else
 #include <QAbstractMessageHandler>
 #include <QSourceLocation>
+#include <QXmlSchema>
+#include <QXmlSchemaValidator>
 #endif
 
+#include <QBuffer>
 #include <QByteArray>
 #include <QDir>
 #include <QDomNodeList>
 #include <QDomText>
 #include <QFile>
 #include <QFileInfo>
-#include <QFutureWatcher>
+#include <QHash>
 #include <QIODevice>
 #include <QMessageLogger>
 #include <QObject>
@@ -63,7 +71,6 @@
 #include <QUrl>
 #include <QVector>
 #include <QXmlStreamWriter>
-#include <QtConcurrentRun>
 #include <QtDebug>
 
 #ifdef Q_OS_UNIX
@@ -242,6 +249,89 @@ auto LessThen(const QDomNode &element1, const QDomNode &element2) -> bool
     }
     return false;
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+auto CopyFileData(const QString &source, const QString &destination, QString &error) -> bool
+{
+    QTemporaryFile destFile(destination + ".XXXXXX"_L1);
+    destFile.setAutoRemove(false); // Will be renamed to be destination file
+    if (not destFile.open())
+    {
+        error = destFile.errorString();
+        return false;
+    }
+
+    QFile sourceFile(source);
+    if (not sourceFile.open(QIODevice::ReadOnly))
+    {
+        error = sourceFile.errorString();
+        return false;
+    }
+
+    char block[4096];
+    qint64 bytes;
+    while ((bytes = sourceFile.read(block, sizeof(block))) > 0)
+    {
+        if (bytes != destFile.write(block, bytes))
+        {
+            error = destFile.errorString();
+            return false;
+        }
+    }
+
+    if (bytes == -1)
+    {
+        error = sourceFile.errorString();
+        return false;
+    }
+
+    QFile::remove(destination);
+    if (not destFile.rename(destination))
+    {
+        error = destFile.errorString();
+        return false;
+    }
+
+    return true;
+}
+
+auto WriteDocumentData(const QString &fileName, const QByteArray &data, QString &error) -> bool
+{
+    bool success = false;
+    QSaveFile file(fileName);
+    if (file.open(QIODevice::WriteOnly))
+    {
+        if (file.write(data) == data.size())
+        {
+            success = file.commit();
+
+#if defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
+            if (success)
+            {
+                // https://stackoverflow.com/questions/74051505/does-qsavefilecommit-fsync-the-file-to-the-filesystem
+                QString const directoryPath = QFileInfo(file.fileName()).absoluteDir().path();
+                int const dirFd = ::open(directoryPath.toLocal8Bit().data(), O_RDONLY | O_DIRECTORY);
+                if (dirFd != -1)
+                {
+                    ::fsync(dirFd);
+                    ::close(dirFd);
+                }
+            }
+#endif
+        }
+        else
+        {
+            file.cancelWriting();
+        }
+    }
+
+    if (not success)
+    {
+        error = file.errorString();
+    }
+
+    return success;
+}
 } // namespace
 
 QT_WARNING_PUSH
@@ -266,25 +356,8 @@ const QString VDomDocument::TagLine = QStringLiteral("line");
 //---------------------------------------------------------------------------------------------------------------------
 VDomDocument::VDomDocument(QObject *parent)
   : QObject(parent),
-    QDomDocument(),
-    m_elementIdCache(),
-    m_watcher(new QFutureWatcher<QHash<quint32, QDomElement>>(this))
+    QDomDocument()
 {
-    connect(qApp,
-            &QCoreApplication::aboutToQuit,
-            m_watcher,
-            [this]() -> void
-            {
-                m_watcher->cancel();
-                m_watcher->waitForFinished();
-            });
-    connect(m_watcher, &QFutureWatcher<QHash<quint32, QDomElement>>::finished, this, &VDomDocument::CacheRefreshed);
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-VDomDocument::~VDomDocument()
-{
-    m_watcher->cancel();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -378,9 +451,9 @@ auto VDomDocument::find(QHash<quint32, QDomElement> &cache, const QDomElement &n
         }
     }
 
-    for (qint32 i = 0; i < node.childNodes().length(); ++i)
+    for (QDomNode n = node.firstChild(); not n.isNull(); n = n.nextSibling())
     {
-        if (const QDomNode n = node.childNodes().at(i); n.isElement() && VDomDocument::find(cache, n.toElement(), id))
+        if (n.isElement() && VDomDocument::find(cache, n.toElement(), id))
         {
             return true;
         }
@@ -604,7 +677,7 @@ auto VDomDocument::GetParametrDouble(const QDomElement &domElement, const QStrin
  * @param domElement tag in xml tree.
  * @return id value.
  */
-auto VDomDocument::GetParametrId(const QDomElement &domElement) -> quint32
+auto VDomDocument::GetParametrId(const QDomElement &domElement, const QString &name) -> quint32
 {
     Q_ASSERT_X(not domElement.isNull(), Q_FUNC_INFO, "domElement is null");
 
@@ -613,7 +686,7 @@ auto VDomDocument::GetParametrId(const QDomElement &domElement) -> quint32
     const QString message = QObject::tr("Got wrong parameter id. Need only id > 0.");
     try
     {
-        id = GetParametrUInt(domElement, VDomDocument::AttrId, NULL_ID_STR);
+        id = GetParametrUInt(domElement, name, NULL_ID_STR);
         if (id == NULL_ID)
         {
             throw VExceptionWrongId(message, domElement);
@@ -651,52 +724,76 @@ auto VDomDocument::UniqueTagText(const QString &tagName, const QString &defVal) 
  */
 void VDomDocument::TestUniqueId() const
 {
-    QVector<quint32> vector;
-    CollectId(documentElement(), vector);
+    QHash<quint32, QDomElement> ids;
+    CollectId(documentElement(), ids);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VDomDocument::CollectId(const QDomElement &node, QVector<quint32> &vector) const
+void VDomDocument::CollectId(const QDomElement &node, QHash<quint32, QDomElement> &ids) const
 {
     if (node.hasAttribute(VDomDocument::AttrId))
     {
         const quint32 id = GetParametrId(node);
-        if (vector.contains(id))
+        if (auto it = ids.constFind(id); it != ids.constEnd())
         {
-            throw VExceptionWrongId(tr("This id (%1) is not unique.").arg(id), node);
+            VExceptionWrongId excep(tr("This id (%1) is not unique.").arg(id), node);
+
+            // Report both occurrences: seeing only the later one leaves no way to tell which is the stale
+            // element and which is the new one, and that ambiguity is a dead end for the next report.
+            QString firstTag;
+            QTextStream stream(&firstTag);
+            it.value().save(stream, 4);
+            excep.AddMoreInformation(tr("First occurrence of this id:\n%1").arg(firstTag));
+
+            throw excep;
         }
-        vector.append(id);
+        ids.insert(id, node);
     }
 
-    for (qint32 i = 0; i < node.childNodes().length(); ++i)
+    for (QDomNode n = node.firstChild(); not n.isNull(); n = n.nextSibling())
     {
-        const QDomNode n = node.childNodes().at(i);
         if (n.isElement())
         {
-            CollectId(n.toElement(), vector);
+            CollectId(n.toElement(), ids);
         }
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+// Builds the cache on this thread. QDomDocument is not thread-safe, and the callers (Parse(), Clear(),
+// RemoveAllChildren()) go on to rewrite the very document a background walk would be reading.
 void VDomDocument::RefreshElementIdCache()
 {
-    if (m_watcher->isFinished())
-    {
-        m_watcher->setFuture(
-            QtConcurrent::run([this]() -> QHash<quint32, QDomElement> { return RefreshCache(documentElement()); }));
-    }
+    m_elementIdCache = RefreshCache(documentElement());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VDomDocument::CacheRefreshed()
+/**
+ * @brief MaxRecordedId return the highest id attribute present anywhere in the document.
+ *
+ * Unlike TestUniqueId(), this never throws and counts ids on elements whose referenced object no longer
+ * exists (e.g. an orphaned modeling node left behind after its source curve was deleted). A full parse must
+ * resync the id generator against this value, not just against the ids of objects it manages to rebuild: an id
+ * that only survives on such an orphaned element is still spent and must not be handed out again.
+ *
+ * @return highest id found, or NULL_ID if the document has none.
+ */
+auto VDomDocument::MaxRecordedId() const -> quint32
 {
-    if (m_watcher->isCanceled())
+    quint32 maxId = NULL_ID;
+    const QList<quint32> ids = m_elementIdCache.keys();
+    for (quint32 id : ids)
     {
-        return;
+        maxId = qMax(maxId, id);
     }
+    return maxId;
+}
 
-    m_elementIdCache = m_watcher->future().result();
+//---------------------------------------------------------------------------------------------------------------------
+void VDomDocument::Clear()
+{
+    clear();
+    m_elementIdCache.clear();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -721,7 +818,8 @@ void VDomDocument::setXMLContent(const QString &fileName)
     if (const QDomDocument::ParseResult result = QDomDocument::setContent(&file); !result)
     {
         file.close();
-        HandleParsingError(result.errorMessage, static_cast<int>(result.errorLine),
+        HandleParsingError(result.errorMessage,
+                           static_cast<int>(result.errorLine),
                            static_cast<int>(result.errorColumn));
     }
 #else
@@ -769,45 +867,172 @@ auto VDomDocument::SaveDocument(const QString &fileName, QString &error) -> bool
         qDebug() << "Got empty file name.";
         return false;
     }
-    bool success = false;
-    QSaveFile file(fileName);
-    if (file.open(QIODevice::WriteOnly))
+
+    // QSaveFile guarantees an atomic write, but not that the content is meaningful. If the in-memory document is
+    // empty or damaged we must refuse to commit, otherwise we silently replace the user's good file with an empty
+    // or corrupt one. Cheap fast-path: an empty document has no root element.
+    if (documentElement().isNull())
     {
-        // See issue #666. QDomDocument produces random attribute order.
-        if (const int indent = 4; not SaveCanonicalXML(&file, indent, error))
+        error = tr("Refusing to save: the document has no content.");
+        return false;
+    }
+
+    // Serialize into memory first so we can validate the result before touching the target file. See issue #666:
+    // SaveCanonicalXML produces a deterministic attribute order.
+    QByteArray data;
+    {
+        QBuffer buffer(&data);
+        buffer.open(QIODevice::WriteOnly);
+        if (const int indent = 4; not SaveCanonicalXML(&buffer, indent, error))
         {
             return false;
         }
-        // Left these strings in case we will need them for testing purposes
-        // QTextStream out(&file);
-        // #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-        //  out.setCodec("UTF-8");
-        // #endif
-        //  save(out, indent);
-
-        success = file.commit();
-
-#if defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
-        if (success)
-        {
-            // https://stackoverflow.com/questions/74051505/does-qsavefilecommit-fsync-the-file-to-the-filesystem
-            QString const directoryPath = QFileInfo(file.fileName()).absoluteDir().path();
-            int const dirFd = ::open(directoryPath.toLocal8Bit().data(), O_RDONLY | O_DIRECTORY);
-            if (dirFd != -1)
-            {
-                ::fsync(dirFd);
-                ::close(dirFd);
-            }
-        }
-#endif
     }
 
-    if (not success)
+    if (data.isEmpty())
     {
-        error = file.errorString();
+        error = tr("Refusing to save: serialization produced no data.");
+        return false;
     }
 
-    return success;
+    // Validate the serialized bytes against the document's XSD schema before committing. This catches both empty
+    // and structurally corrupt output, so a damaged document can never overwrite a good file on disk.
+    if (const QString schema = SaveSchema(); not schema.isEmpty() && not ValidateXMLData(schema, data, fileName, error))
+    {
+        return false;
+    }
+
+    // From here on the document is a plain byte array, so this can safely leave the GUI thread. It has to:
+    // QSaveFile::commit() calls FlushFileBuffers, which a cloud-sync or antivirus filter driver can stall for
+    // seconds, freezing the whole window. Autosave stays silent - the user did not ask for it, so it must not
+    // raise a dialog.
+    const QFileInfo info(fileName);
+    const QString description = info.suffix() == "autosave"_L1 ? QString() : tr("Saving %1…").arg(info.fileName());
+
+    return VAsyncFileIO::RunFileOperation(description,
+                                          [fileName, data, &error]() -> bool
+                                          { return WriteDocumentData(fileName, data, error); });
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VDomDocument::SaveSchema() const -> QString
+{
+    return {}; // No schema by default; subclasses backed by an XSD override this.
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// ponytail: Xerces recompiles the grammar on every call. Load already validates per file open, so paying the same
+// cost on save (incl. autosave) is acceptable; cache the compiled grammar if large-pattern autosave latency bites.
+auto VDomDocument::ValidateXMLData(const QString &schema,
+                                   const QByteArray &data,
+                                   const QString &fileName,
+                                   QString &error) -> bool
+{
+    QFile fileSchema(schema);
+    if (not fileSchema.open(QIODevice::ReadOnly))
+    {
+        error = tr("Can't open schema file %1:\n%2.").arg(schema, fileSchema.errorString());
+        return false;
+    }
+
+    VParserErrorHandler parserErrorHandler;
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    XERCES_CPP_NAMESPACE::XercesDOMParser domParser;
+    domParser.setCreateEntityReferenceNodes(true);
+    domParser.setDisableDefaultEntityResolution(true);
+    domParser.setErrorHandler(&parserErrorHandler);
+
+    QByteArray const schemaFileData = fileSchema.readAll();
+    const char *schemaData = schemaFileData.constData();
+    const auto schemaSize = static_cast<size_t>(schemaFileData.size());
+
+    if (QScopedPointer<XERCES_CPP_NAMESPACE::InputSource> const grammarSource(
+            new XERCES_CPP_NAMESPACE::MemBufInputSource(reinterpret_cast<const XMLByte *>(schemaData),
+                                                        schemaSize,
+                                                        "schema"));
+        domParser.loadGrammar(*grammarSource, XERCES_CPP_NAMESPACE::Grammar::SchemaGrammarType, true) == nullptr)
+    {
+        error = parserErrorHandler.StatusMessage() + '\n'_L1
+                + tr("Could not load schema file '%1'.").arg(fileSchema.fileName());
+        return false;
+    }
+
+    if (parserErrorHandler.HasError())
+    {
+        error = parserErrorHandler.StatusMessage() + '\n'_L1
+                + tr("Schema file %3 invalid in line %1 column %2")
+                      .arg(parserErrorHandler.Line())
+                      .arg(parserErrorHandler.Column())
+                      .arg(fileSchema.fileName());
+        return false;
+    }
+
+    domParser.setValidationScheme(XERCES_CPP_NAMESPACE::XercesDOMParser::Val_Always);
+    domParser.setDoNamespaces(true);
+    domParser.setDoSchema(true);
+    domParser.setValidationConstraintFatal(true);
+    domParser.setValidationSchemaFullChecking(true);
+    domParser.useCachedGrammarInParse(true);
+
+    const char *patternData = data.constData();
+    const auto patternSize = static_cast<size_t>(data.size());
+
+    QScopedPointer<XERCES_CPP_NAMESPACE::InputSource> const patternSource(
+        new XERCES_CPP_NAMESPACE::MemBufInputSource(reinterpret_cast<const XMLByte *>(patternData),
+                                                    patternSize,
+                                                    "pattern"));
+
+    domParser.parse(*patternSource);
+
+    if (domParser.getErrorCount() > 0)
+    {
+        error = parserErrorHandler.StatusMessage() + '\n'_L1
+                + tr("Validation error file %3 in line %1 column %2")
+                      .arg(parserErrorHandler.Line())
+                      .arg(parserErrorHandler.Column())
+                      .arg(fileName);
+        return false;
+    }
+#else
+    QXmlSchema sch;
+    sch.setMessageHandler(&parserErrorHandler);
+    if (sch.load(&fileSchema, QUrl::fromLocalFile(fileSchema.fileName())) == false)
+    {
+        error = parserErrorHandler.StatusMessage() + '\n'_L1
+                + tr("Could not load schema file '%1'.").arg(fileSchema.fileName());
+        return false;
+    }
+
+    bool errorOccurred = false;
+    if (sch.isValid() == false)
+    {
+        errorOccurred = true;
+    }
+    else
+    {
+        QByteArray patternData = data;
+        QBuffer pattern(&patternData);
+        pattern.open(QIODevice::ReadOnly);
+        QXmlSchemaValidator validator(sch);
+        if (validator.validate(&pattern) == false)
+        {
+            errorOccurred = true;
+        }
+    }
+
+    if (errorOccurred)
+    {
+        error = parserErrorHandler.StatusMessage() + '\n'_L1
+                + tr("Validation error file %3 in line %1 column %2")
+                      .arg(parserErrorHandler.Line())
+                      .arg(parserErrorHandler.Column())
+                      .arg(fileName);
+        return false;
+    }
+#endif // QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+
+    return true;
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -969,12 +1194,9 @@ auto VDomDocument::UniqueTag(const QString &tagName) const -> QDomElement
  */
 void VDomDocument::RemoveAllChildren(QDomElement &domElement)
 {
-    if (domElement.hasChildNodes())
+    while (domElement.hasChildNodes())
     {
-        while (domElement.childNodes().length() >= 1)
-        {
-            domElement.removeChild(domElement.firstChild());
-        }
+        domElement.removeChild(domElement.firstChild());
     }
 }
 
@@ -1006,67 +1228,12 @@ auto VDomDocument::NodeById(const quint32 &nodeId, const QString &tagName) -> QD
 //---------------------------------------------------------------------------------------------------------------------
 auto VDomDocument::SafeCopy(const QString &source, const QString &destination, QString &error) -> bool
 {
-    bool result = false;
-
-    // #ifdef Q_OS_WIN32
-    //     qt_ntfs_permission_lookup++; // turn checking on
-    // #endif /*Q_OS_WIN32*/
-
-    QTemporaryFile destFile(destination + ".XXXXXX"_L1);
-    destFile.setAutoRemove(false); // Will be renamed to be destination file
-    if (not destFile.open())
-    {
-        error = destFile.errorString();
-    }
-    else
-    {
-        QFile sourceFile(source);
-        if (sourceFile.open(QIODevice::ReadOnly))
-        {
-            result = true;
-            char block[4096];
-            qint64 bytes;
-            while ((bytes = sourceFile.read(block, sizeof(block))) > 0)
-            {
-                if (bytes != destFile.write(block, bytes))
-                {
-                    error = destFile.errorString();
-                    result = false;
-                    break;
-                }
-            }
-
-            if (bytes == -1)
-            {
-                error = sourceFile.errorString();
-                result = false;
-            }
-
-            if (result)
-            {
-                QFile::remove(destination);
-                if (not destFile.rename(destination))
-                {
-                    error = destFile.errorString();
-                    result = false;
-                }
-                else
-                {
-                    result = true;
-                }
-            }
-        }
-        else
-        {
-            error = sourceFile.errorString();
-        }
-    }
-
-    // #ifdef Q_OS_WIN32
-    //     qt_ntfs_permission_lookup--; // turn off check permission again
-    // #endif /*Q_OS_WIN32*/
-
-    return result;
+    // No DOM is involved here, so the whole copy can leave the GUI thread - and it has to: removing and renaming
+    // the destination goes through DeleteFileW on Windows, which a cloud-sync or antivirus filter driver can stall
+    // for seconds. This is the stall seen when opening an older-format file, which makes a reserve copy first.
+    return VAsyncFileIO::RunFileOperation(tr("Copying %1…").arg(QFileInfo(destination).fileName()),
+                                          [source, destination, &error]() -> bool
+                                          { return CopyFileData(source, destination, error); });
 }
 
 //---------------------------------------------------------------------------------------------------------------------

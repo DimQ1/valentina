@@ -33,13 +33,13 @@
 #include <QObject>
 #include <QtGlobal>
 
+#include "../vlayout/vfoldline.h"
 #include "../vwidgets/vgrainlineitem.h"
 #include "../vwidgets/vtextgraphicsitem.h"
 #include "vinteractivetool.h"
 
 class DialogTool;
 class VNoBrushScalePathItem;
-class VFoldLine;
 class VPatternGraph;
 
 struct VToolSeamAllowanceInitData : VAbstractToolInitData
@@ -47,6 +47,27 @@ struct VToolSeamAllowanceInitData : VAbstractToolInitData
     VPiece detail{};    // NOLINT(misc-non-private-member-variables-in-classes)
     QString width{'0'}; // NOLINT(misc-non-private-member-variables-in-classes)
     QString drawName{}; // NOLINT(misc-non-private-member-variables-in-classes)
+};
+
+// Snapshot of a piece's computed scene geometry. Produced off the GUI thread by
+// VToolSeamAllowance::ComputePieceGeometry() (no QGraphicsItem access) and consumed on the GUI
+// thread by VToolSeamAllowance::ApplyPieceGeometry(). This split lets many pieces be recomputed in
+// parallel before their results are applied to the scene.
+struct VToolSeamAllowanceGeometry
+{
+    bool valid{false}; // false if the geometry could not be computed; such a piece is skipped on apply
+    QPointF pos{};
+    bool showMainPath{false};
+    QPainterPath seamPath{};
+    QPainterPath passmarks{};
+    bool combineTogether{false};
+    VFoldLine foldLine{};
+    QPainterPath mirrorLine{};
+    bool hasSeamAllowance{false};
+    bool seamAllowanceValid{true};
+    QPainterPath seamAllowance{};
+    QPainterPath placeLabels{};
+    QString pieceName{};
 };
 
 class VToolSeamAllowance final : public VInteractiveTool, public QGraphicsPathItem
@@ -112,6 +133,13 @@ public:
     void ConnectOutsideSignals();
     void ReinitInternals(const VPiece &detail, VMainGraphicsScene *scene);
     void RefreshGeometry(bool updateChildren = true);
+    void RefreshScale();
+
+    // Two-phase refresh for batch updates. PrepareRefreshGeometry() computes the geometry off the
+    // GUI thread (safe to call concurrently for different pieces); ApplyBatchGeometry() applies the
+    // prepared result and must run on the GUI thread.
+    void PrepareRefreshGeometry(bool combineTogether, bool pieceShowMainPath);
+    void ApplyBatchGeometry(bool updateChildren = true);
 
     auto type() const -> int override { return Type; }
     enum
@@ -145,6 +173,7 @@ public slots:
 
 private slots:
     void UpdateGrainline();
+    void RefreshFoldLine();
     void SaveMoveDetail(const QPointF &ptPos);
     void SaveResizeDetail(qreal dLabelW);
     void SaveRotationDetail(qreal dRot);
@@ -205,6 +234,10 @@ private:
     bool m_patternLabelInfoStale{false};
     bool m_pieceLabelInfoStale{false};
 
+    /** @brief Geometry computed by PrepareRefreshGeometry() (off the GUI thread) and consumed by
+     * ApplyBatchGeometry() (on the GUI thread). */
+    VToolSeamAllowanceGeometry m_batchGeometry{};
+
     explicit VToolSeamAllowance(const VToolSeamAllowanceInitData &initData, QGraphicsItem *parent = nullptr);
 
     void AddToFile() override;
@@ -224,6 +257,7 @@ private:
 
     void UpdateExcludeState();
     void UpdateInternalPaths();
+    void DeferredLabelGrainlineUpdate(bool updateChildren);
 
     auto FindLabelGeometry(const VPatternLabelData &labelData, const QVector<quint32> &pins, qreal &rotationAngle,
                            qreal &labelWidth, qreal &labelHeight, QPointF &pos) -> VPieceItem::MoveTypes;
@@ -232,6 +266,7 @@ private:
 
     void InitNodes(const VPiece &detail, VMainGraphicsScene *scene);
     static void InitNode(const VPieceNode &node, VMainGraphicsScene *scene, VToolSeamAllowance *parent);
+    static void InitInternalNode(const VPieceNode &node, VToolSeamAllowance *parent);
     void InitInternalPaths(const VPiece &detail);
 
     auto PrepareLabelData(const VPatternLabelData &labelData, const QVector<quint32> &pins,
@@ -261,6 +296,9 @@ private:
         -> QVector<quint32>;
 
     void UpdateFoldLine(const VFoldLine &foldLine);
+
+    auto ComputePieceGeometry(bool combineTogether, bool pieceShowMainPath) const -> VToolSeamAllowanceGeometry;
+    void ApplyPieceGeometry(const VToolSeamAllowanceGeometry &geom, bool updateChildren);
 };
 
 #endif // VTOOLSEAMALLOWANCE_H

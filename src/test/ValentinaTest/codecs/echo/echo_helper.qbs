@@ -11,6 +11,7 @@ CppApplication {
              Utilities.versionCompare(Qt.core.version, "6") >= 0 &&
              project.withTextCodec &&
              qbs.targetOS.contains("unix")
+  install: false
 
   qbsModuleProviders: {
       var providers = ["Qt"];
@@ -30,7 +31,7 @@ CppApplication {
   Properties {
       condition: qbs.targetOS.contains("macos")
       cpp.rpaths: [
-          FileInfo.joinPaths(cpp.rpathOrigin, "..", "install-root", product.qbs.installPrefix,  product.buildconfig.installAppPath + "/Valentina.app/Contents/Frameworks"),
+          FileInfo.joinPaths(qbs.installRoot, product.qbs.installPrefix, product.buildconfig.installAppPath, "Valentina.app/Contents/Frameworks"),
           Qt.core.libPath
       ]
   }

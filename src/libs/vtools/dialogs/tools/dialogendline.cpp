@@ -80,6 +80,8 @@ DialogEndLine::DialogEndLine(const VContainer *data, VAbstractPattern *doc, quin
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxBasePoint);
+
     timerFormulaLength->setSingleShot(true);
     timerFormulaAngle->setSingleShot(true);
 
@@ -108,7 +110,7 @@ DialogEndLine::DialogEndLine(const VContainer *data, VAbstractPattern *doc, quin
     connect(ui->lineEditNamePoint, &QLineEdit::textChanged, this,
             [this]()
             {
-                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, pointName, this->data, flagName);
+                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, pointName, &this->data, flagName);
                 CheckState();
             });
 
@@ -124,7 +126,7 @@ DialogEndLine::DialogEndLine(const VContainer *data, VAbstractPattern *doc, quin
     connect(timerFormulaLength, &QTimer::timeout, this, &DialogEndLine::EvalLength);
     connect(timerFormulaAngle, &QTimer::timeout, this, &DialogEndLine::EvalAngle);
 
-    vis = new VisToolEndLine(data);
+    vis = new VisToolEndLine(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -137,7 +139,7 @@ DialogEndLine::DialogEndLine(const VContainer *data, VAbstractPattern *doc, quin
 void DialogEndLine::EvalAngle()
 {
     Eval({.formula = ui->plainTextEditAngle->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditAngle,
           .labelResult = ui->labelResultCalculationAngle,
           .postfix = degreeSymbol},
@@ -148,7 +150,7 @@ void DialogEndLine::EvalAngle()
 void DialogEndLine::EvalLength()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditFormula,
           .labelResult = ui->labelResultCalculation,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -170,7 +172,7 @@ void DialogEndLine::DeployAngleTextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogEndLine::FXAngle()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit angle"));
     dialog->SetFormula(GetAngle());
     dialog->setPostfix(degreeSymbol);
@@ -184,7 +186,7 @@ void DialogEndLine::FXAngle()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogEndLine::FXLength()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit length"));
     dialog->SetFormula(GetFormula());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -261,9 +263,14 @@ void DialogEndLine::SetFormula(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(formulaLength);
 
-    auto *line = qobject_cast<VisToolEndLine *>(vis);
-    SCASSERT(line != nullptr)
-    line->SetLength(formulaLength);
+    if (auto *line = qobject_cast<VisToolEndLine *>(vis))
+    {
+        line->SetLength(formulaLength);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
@@ -285,9 +292,14 @@ void DialogEndLine::SetAngle(const QString &value)
     }
     ui->plainTextEditAngle->setPlainText(formulaAngle);
 
-    auto *line = qobject_cast<VisToolEndLine *>(vis);
-    SCASSERT(line != nullptr)
-    line->SetAngle(formulaAngle);
+    if (auto *line = qobject_cast<VisToolEndLine *>(vis))
+    {
+        line->SetAngle(formulaAngle);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditAngle);
 }
@@ -340,7 +352,7 @@ void DialogEndLine::ShowDialog(bool click)
             /*We will ignore click if pointer is in point circle*/
             auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
             SCASSERT(scene != nullptr)
-            const QSharedPointer<VPointF> point = data->GeometricObject<VPointF>(GetBasePointId());
+            const QSharedPointer<VPointF> point = data.GeometricObject<VPointF>(GetBasePointId());
             auto const line = QLineF(static_cast<QPointF>(*point), scene->getScenePos());
 
             // Radius of point circle, but little bigger. Need handle with hover sizes.

@@ -35,19 +35,28 @@
 
 #include "../vmisc/testvapplication.h"
 #include "tst_dxf.h"
+#include "tst_fancytabbar.h"
 #include "tst_findpoint.h"
+#include "tst_formulacache.h"
 #include "tst_misc.h"
 #include "tst_nameregexp.h"
 #include "tst_qmutokenparser.h"
 #include "tst_readval.h"
+#include "tst_renametoken.h"
 #include "tst_svgfontwritingsystem.h"
+#include "tst_toolsdef.h"
 #include "tst_vabstractcurve.h"
 #include "tst_vabstractpiece.h"
+#include "tst_vasyncfileio.h"
 #include "tst_varc.h"
 #include "tst_vboundary.h"
 #include "tst_vcommandline.h"
+#include "tst_vcommonsettings.h"
+#include "tst_vcontainer.h"
 #include "tst_vcubicbezierpath.h"
+#include "tst_vdomdocument.h"
 #include "tst_vellipticalarc.h"
+#include "tst_vfoldline.h"
 #include "tst_vgobject.h"
 #include "tst_vlayoutdetail.h"
 #include "tst_vlockguard.h"
@@ -58,7 +67,11 @@
 #include "tst_vspline.h"
 #include "tst_vsplinepath.h"
 #include "tst_vsvgpathtokenizer.h"
+#include "tst_vmaingraphicsscene.h"
 #include "tst_vtheme.h"
+#include "tst_vlabelarrangeengine.h"
+#include "tst_vabstractpattern.h"
+#include "tst_vpatterngraph.h"
 #include "tst_vtooluniondetails.h"
 #include "tst_vtranslatevars.h"
 #include "tst_xsdschema.h"
@@ -68,6 +81,8 @@
 #include "tst_qstringiterator.h"
 #include "tst_qtextcodec.h"
 #include "tst_utf8.h"
+#else
+#include "tst_vtextcodec.h"
 #endif
 
 #include "tst_vtextstream.h"
@@ -117,18 +132,24 @@ auto main(int argc, char **argv) -> int
     };
 
     ASSERT_TEST(new TST_FindPoint());
+    ASSERT_TEST(new TST_FormulaCache());
+    ASSERT_TEST(new TST_FancyTabBar());
     ASSERT_TEST(new TST_VPiece());
     ASSERT_TEST(new TST_VPoster());
     ASSERT_TEST(new TST_VAbstractPiece());
+    ASSERT_TEST(new TST_VAsyncFileIO());
     ASSERT_TEST(new TST_VSpline());
     ASSERT_TEST(new TST_VSplinePath());
     ASSERT_TEST(new TST_NameRegExp());
     ASSERT_TEST(new TST_VLayoutDetail());
+    ASSERT_TEST(new TST_VFoldLine());
     ASSERT_TEST(new TST_VArc());
     ASSERT_TEST(new TST_VEllipticalArc());
     ASSERT_TEST(new TST_QmuTokenParser());
     ASSERT_TEST(new TST_VMeasurements());
+    ASSERT_TEST(new TST_VDomDocument());
     ASSERT_TEST(new TST_VLockGuard());
+    ASSERT_TEST(new TST_VCommonSettings());
     ASSERT_TEST(new TST_Misc());
     ASSERT_TEST(new TST_VCommandLine());
     ASSERT_TEST(new TST_VAbstractCurve());
@@ -136,7 +157,13 @@ auto main(int argc, char **argv) -> int
     ASSERT_TEST(new TST_VGObject());
     ASSERT_TEST(new TST_VPointF());
     ASSERT_TEST(new TST_ReadVal());
+    ASSERT_TEST(new TST_RenameToken());
     ASSERT_TEST(new TST_VTranslateVars());
+    ASSERT_TEST(new TST_VLabelArrangeEngine());
+    ASSERT_TEST(new TST_VPatternGraph());
+    ASSERT_TEST(new TST_VAbstractPattern());
+    ASSERT_TEST(new TST_VContainer());
+    ASSERT_TEST(new TST_ToolsDef());
     ASSERT_TEST(new TST_VToolUnionDetails());
     ASSERT_TEST(new TST_XSDShema());
     ASSERT_TEST(new TST_VSVGPathTokenizer());
@@ -148,10 +175,13 @@ auto main(int argc, char **argv) -> int
     ASSERT_TEST(new TST_Utf8());
     ASSERT_TEST(new TST_QTextCodec());
     ASSERT_TEST(new TST_QStringIterator());
+#else
+    ASSERT_TEST(new TST_VTextCodec());
 #endif
     ASSERT_TEST(new TST_VTextStream());
 #endif // QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     ASSERT_TEST(new TST_VTheme());
+    ASSERT_TEST(new TST_VMainGraphicsScene());
 
     return status;
 }

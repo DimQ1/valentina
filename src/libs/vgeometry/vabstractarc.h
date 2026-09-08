@@ -70,7 +70,7 @@ public:
     void SetFormulaF2(const QString &formula, qreal value);
     auto GetEndAngle() const -> qreal override;
 
-    virtual auto GetCenter() const -> VPointF;
+    auto GetCenter() const -> VPointF;
     void SetCenter(const VPointF &point);
 
     auto GetFormulaLength() const -> QString;
@@ -81,6 +81,9 @@ public:
     auto GetMainNameForHistory() const -> QString override;
 
     auto IsFlipped() const -> bool;
+    auto IsReversed() const -> bool;
+    auto IsNegative() const -> bool;
+
     auto AngleArc() const -> qreal;
 
     auto GetPath() const -> QPainterPath override;
@@ -95,6 +98,7 @@ public:
 
 protected:
     void SetFlipped(bool value);
+    void SetReversed(bool value);
     void SetAllowEmpty(bool value);
     auto IsAllowEmpty() const -> bool;
 

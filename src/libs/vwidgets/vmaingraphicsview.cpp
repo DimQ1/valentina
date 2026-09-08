@@ -29,6 +29,7 @@
 #include "vmaingraphicsview.h"
 
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QCursor>
 #include <QEvent>
 #include <QFlags>
@@ -44,14 +45,23 @@
 #include <QOpenGLWidget>
 #include <QPainter>
 #include <QPoint>
+#include <QRubberBand>
 #include <QScreen>
 #include <QScrollBar>
+#include <QStyle>
+#include <QStyleOption>
 #include <QThread>
 #include <QTimeLine>
 #include <QTransform>
 #include <QWheelEvent>
 #include <QWidget>
 #include <QtMath>
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 9, 0)
+#include "../vmisc/backport/qpainterstateguard.h"
+#else
+#include <QPainterStateGuard>
+#endif
 
 #include "../ifc/xml/utils.h"
 #include "../vmisc/compatibility.h"
@@ -83,7 +93,7 @@ auto ScrollingSteps(QWheelEvent *wheel_event) -> qreal
     else if (not numDegrees.isNull())
     {
         const qreal mouseScale = settings->GetWheelMouseScale();
-        numSteps = (numPixels.x() == 0 ? numDegrees.y() : numDegrees.x()) / 15. * mouseScale;
+        numSteps = (numDegrees.x() == 0 ? numDegrees.y() : numDegrees.x()) / 15. * mouseScale;
     }
 
     return numSteps;
@@ -234,8 +244,17 @@ void GraphicsViewZoom::HorizontalScrollingTime(qreal x)
 //---------------------------------------------------------------------------------------------------------------------
 void GraphicsViewZoom::animFinished()
 {
-    _numScheduledVerticalScrollings = 0;
-    _numScheduledHorizontalScrollings = 0;
+    QObject const *animation = sender();
+
+    if (animation == nullptr || animation == verticalScrollAnim.data())
+    {
+        _numScheduledVerticalScrollings = 0;
+    }
+
+    if (animation == nullptr || animation == horizontalScrollAnim.data())
+    {
+        _numScheduledHorizontalScrollings = 0;
+    }
 
     /*
      * In moust cases cursor position on view doesn't change, but for scene after scrolling position will be different.
@@ -492,7 +511,7 @@ void VMainGraphicsView::ZoomOriginal()
 //---------------------------------------------------------------------------------------------------------------------
 void VMainGraphicsView::ZoomFitBest()
 {
-    auto *currentScene = qobject_cast<VMainGraphicsScene *>(scene());
+    const auto *currentScene = qobject_cast<VMainGraphicsScene *>(scene());
     SCASSERT(currentScene)
     currentScene->SetOriginsVisible(false);
     const QRectF rect = currentScene->VisibleItemsBoundingRect();
@@ -546,6 +565,7 @@ void VMainGraphicsView::EnsureToolVisible(const QRectF &rect)
                         transform.m33());
     setTransform(transform);
     ensureVisible(rect);
+    emit ScaleChanged(transform.m11());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -559,9 +579,14 @@ void VMainGraphicsView::mousePressEvent(QMouseEvent *event)
     {
         case Qt::LeftButton:
         {
-            if (isAllowRubberBand)
+            if (isAllowRubberBand && not m_customRubberBand)
             {
                 QGraphicsView::setDragMode(QGraphicsView::RubberBandDrag);
+            }
+            else if (m_customRubberBand)
+            {
+                m_rubberBandOrigin = event->pos();
+                m_rubberBandCurrent = event->pos();
             }
 
             if (showToolOptions)
@@ -570,7 +595,7 @@ void VMainGraphicsView::mousePressEvent(QMouseEvent *event)
                 const QList<QGraphicsItem *> list = PrioritizeItems(items(event->pos()));
                 for (auto *item : list)
                 {
-                    if (item && item->type() > QGraphicsItem::UserType && item->type() <= VSimpleCurve::Type)
+                    if (item != nullptr && item->type() > QGraphicsItem::UserType && item->type() <= VSimpleCurve::Type)
                     {
                         emit itemClicked(item);
                         success = true;
@@ -631,6 +656,22 @@ void VMainGraphicsView::mouseMoveEvent(QMouseEvent *event)
         vBar->setValue(vBar->value() - delta.y());
         m_ptStartPos = event->pos();
     }
+    else if (m_customRubberBand && (event->buttons() & Qt::LeftButton))
+    {
+        if (const QPoint delta = event->pos() - m_rubberBandOrigin;
+            !m_rubberBanding && delta.manhattanLength() > QApplication::startDragDistance())
+        {
+            m_rubberBanding = true;
+            emit RubberBandSelectionStarted();
+        }
+        if (m_rubberBanding)
+        {
+            m_rubberBandCurrent = event->pos();
+            viewport()->update();
+            const QRect viewRect = QRect(m_rubberBandOrigin, m_rubberBandCurrent).normalized();
+            emit RubberBandSelection(mapToScene(viewRect).boundingRect());
+        }
+    }
     else
     {
         QGraphicsView::mouseMoveEvent(event);
@@ -644,6 +685,15 @@ void VMainGraphicsView::mouseMoveEvent(QMouseEvent *event)
  */
 void VMainGraphicsView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_customRubberBand && event->button() == Qt::LeftButton && m_rubberBanding)
+    {
+        m_rubberBanding = false;
+        viewport()->update();
+        emit RubberBandSelectionFinished();
+        emit MouseRelease();
+        return;
+    }
+
     QGraphicsView::mouseReleaseEvent(event); // First because need to hide a rubber band
     QGraphicsView::setDragMode(QGraphicsView::NoDrag);
     if (event->button() == Qt::MiddleButton)
@@ -666,6 +716,25 @@ void VMainGraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
     }
 
     QGraphicsView::mouseDoubleClickEvent(event);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VMainGraphicsView::contextMenuEvent(QContextMenuEvent *event)
+{
+    const QPointF scenePos = mapToScene(event->pos());
+    const QList<QGraphicsItem *> itemsAtPos = scene() != nullptr ? scene()->items(scenePos) : QList<QGraphicsItem *>{};
+    const bool hasToolItems = std::any_of(itemsAtPos.cbegin(), itemsAtPos.cend(),
+                                          [](const QGraphicsItem *item)
+                                          { return item->type() >= QGraphicsItem::UserType; });
+    if (hasToolItems)
+    {
+        QGraphicsView::contextMenuEvent(event);
+    }
+    else
+    {
+        emit SceneContextMenuRequested(event->globalPos());
+        event->accept();
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -735,6 +804,25 @@ void VMainGraphicsView::dropEvent(QDropEvent *event)
                 event->ignore();
             }
         }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VMainGraphicsView::drawForeground(QPainter *painter, const QRectF &rect)
+{
+    QGraphicsView::drawForeground(painter, rect);
+    if (m_rubberBanding)
+    {
+        QPainterStateGuard const guard(painter);
+        painter->resetTransform();
+        const QRect viewRect = QRect(m_rubberBandOrigin, m_rubberBandCurrent).normalized();
+
+        QStyleOptionRubberBand option;
+        option.initFrom(viewport());
+        option.rect = viewRect;
+        option.shape = QRubberBand::Rectangle;
+        option.opaque = false;
+        viewport()->style()->drawControl(QStyle::CE_RubberBand, &option, painter, viewport());
     }
 }
 
@@ -840,6 +928,14 @@ void VMainGraphicsView::setShowToolOptions(bool value)
 void VMainGraphicsView::AllowRubberBand(bool value)
 {
     isAllowRubberBand = value;
+    m_customRubberBand = false;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VMainGraphicsView::AllowCustomRubberBand(bool value)
+{
+    isAllowRubberBand = value;
+    m_customRubberBand = value;
 }
 
 //---------------------------------------------------------------------------------------------------------------------

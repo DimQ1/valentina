@@ -6,17 +6,19 @@ class Recipe(ConanFile):
   settings = "os"
   generators = "QbsDeps"
   options = {
-      "with_xerces": [True, False], 
+      "with_xerces": [True, False],
       "with_crash_reporting": [True, False],
       "with_icu": [True, False],
       "with_iconv": [True, False],
+      "with_immer": [True, False],
   }
   default_options = {
-      "xerces-c/*:shared": True, 
-      "with_xerces": False, 
+      "xerces-c/*:shared": True,
+      "with_xerces": False,
       "with_crash_reporting": False,
       "with_icu" : False,
       "with_iconv" : False,
+      "with_immer": False,
   }
 
   def configure(self):
@@ -34,6 +36,9 @@ class Recipe(ConanFile):
         self.requires("sentry-crashpad/0.6.5")
 
     if self.options.with_icu:
-        self.requires("icu/77.1")
+        self.requires("icu/78.2")
     elif self.options.with_iconv:
         self.requires("libiconv/1.18")
+
+    if self.options.with_immer:
+        self.requires("immer/0.9.1")

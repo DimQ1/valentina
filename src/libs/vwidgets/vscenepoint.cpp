@@ -37,6 +37,7 @@
 
 #include <QBrush>
 #include <QFont>
+#include <QGraphicsScene>
 #include <QPainter>
 #include <QPen>
 #include <QStyle>
@@ -67,14 +68,11 @@ VScenePoint::VScenePoint(VColorRole role, QGraphicsItem *parent)
 //---------------------------------------------------------------------------------------------------------------------
 void VScenePoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-    const qreal scale = SceneScale(scene());
-
-    ScaleMainPenWidth(scale);
-    ScaleCircleSize(this, scale);
-
-    const VCommonSettings *settings = VAbstractApplication::VApp()->Settings();
-
-    if (settings->GetShowAccuracyRadius())
+    // Do not mutate item/scene state here. Since Qt 6 changing geometry, visibility or
+    // selection inside paint() crashes the paint pipeline on Windows. All scale-dependent
+    // state lives in RefreshScale(), driven by VMainGraphicsView::ScaleChanged and the tool
+    // refresh path.
+    if (VAbstractApplication::VApp()->Settings()->GetShowAccuracyRadius())
     {
         QPainterStateGuard const guard(painter);
 
@@ -87,7 +85,19 @@ void VScenePoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
         painter->drawEllipse(PointRect(accuracyPointOnLine));
     }
 
-    if (settings->GetPatternLabelFontSize() * scale < minVisibleFontSize || settings->GetHideLabels())
+    PaintWithFixItemHighlightSelected<QGraphicsEllipseItem>(this, painter, option, widget);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VScenePoint::RefreshScale()
+{
+    const qreal scale = SceneScale(scene());
+
+    ScaleMainPenWidth(scale);
+    ScaleCircleSize(this, scale);
+
+    if (const VCommonSettings *settings = VAbstractApplication::VApp()->Settings();
+        settings->GetPatternLabelFontSize() * scale < minVisibleFontSize || settings->GetHideLabels())
     {
         m_namePoint->setVisible(false);
         m_lineName->setVisible(false);
@@ -100,8 +110,6 @@ void VScenePoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
             RefreshLine();
         }
     }
-
-    PaintWithFixItemHighlightSelected<QGraphicsEllipseItem>(this, painter, option, widget);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -121,9 +129,8 @@ void VScenePoint::RefreshPointGeometry(const VPointF &point)
     }
 
     m_namePoint->setText(point.name());
-    m_namePoint->setVisible(m_showLabel);
 
-    RefreshLine();
+    RefreshScale();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -154,9 +161,23 @@ auto VScenePoint::IsOnlyPoint() const -> bool
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+auto VScenePoint::itemChange(GraphicsItemChange change, const QVariant &value) -> QVariant
+{
+    // Size the point for the current view scale as soon as it enters a scene, so it is correct on
+    // its first paint (e.g. when interactively creating a tool) instead of flashing at the default
+    // size until the next RefreshScale/zoom.
+    if (change == ItemSceneHasChanged && value.value<QGraphicsScene *>() != nullptr)
+    {
+        RefreshScale();
+    }
+    return QGraphicsEllipseItem::itemChange(change, value);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VScenePoint::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
 {
     m_isHovered = true;
+    RefreshHoverPen();
     QGraphicsEllipseItem::hoverEnterEvent(event);
 }
 
@@ -164,7 +185,17 @@ void VScenePoint::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
 void VScenePoint::hoverLeaveEvent(QGraphicsSceneHoverEvent *event)
 {
     m_isHovered = false;
+    RefreshHoverPen();
     QGraphicsEllipseItem::hoverLeaveEvent(event);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VScenePoint::RefreshHoverPen()
+{
+    // paint() no longer recomputes the pen, so re-apply the hovered/un-hovered main pen width for
+    // the current scale here. Otherwise the hover highlight would not appear until the next zoom.
+    ScaleMainPenWidth(SceneScale(scene()));
+    update();
 }
 
 //---------------------------------------------------------------------------------------------------------------------

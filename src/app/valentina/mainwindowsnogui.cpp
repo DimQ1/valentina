@@ -902,6 +902,10 @@ auto MainWindowsNoGUI::PrepareDetailsForLayout(const QVector<DetailForLayout> &d
     QObject::connect(&futureWatcher, &QFutureWatcher<VLayoutPiece>::progressValueChanged, &progress,
                      &QProgressDialog::setValue);
 
+    // Every worker below reads a tool's container snapshot; the main thread must not write
+    // to any container until they are all done. See VContainer::FrozenScope.
+    const VContainer::FrozenScope frozen;
+
     futureWatcher.setFuture(QtConcurrent::mapped(details, PrepareDetail));
 
     if (VApplication::IsGUIMode())
@@ -1024,7 +1028,7 @@ auto MainWindowsNoGUI::CreateScenes(const QList<QGraphicsItem *> &papers, const 
         scene->addItem(papers.at(i));
 
         const QList<QGraphicsItem *> &paperDetails = details.at(i);
-        for (const auto &detail : paperDetails)
+        for (QGraphicsItem *detail : paperDetails)
         {
             scene->addItem(detail);
         }
@@ -1402,7 +1406,7 @@ auto MainWindowsNoGUI::ApplyConverter(const QSharedPointer<VMeasurements> &m, co
 void MainWindowsNoGUI::CollectStatistics(MeasurementsType measurementsType, const QString &formatVersion) const
 {
     const VCommonSettings *settings = VAbstractApplication::VApp()->Settings();
-    if (!settings->IsCollectStatistic())
+    if (!VApplication::IsGUIMode() || !settings->IsCollectStatistic())
     {
         return;
     }

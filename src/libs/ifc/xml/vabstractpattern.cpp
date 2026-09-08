@@ -303,7 +303,8 @@ auto StringToTransfrom(const QString &matrix) -> QTransform
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <class T> auto NumberToString(T number) -> QString
+template<class T>
+auto NumberToString(T number) -> QString
 {
     const QLocale locale = QLocale::c();
     return locale.toString(number, 'g', 12).remove(LocaleGroupSeparator(locale));
@@ -312,9 +313,15 @@ template <class T> auto NumberToString(T number) -> QString
 //---------------------------------------------------------------------------------------------------------------------
 auto TransformToString(const QTransform &m) -> QString
 {
-    QStringList const matrix{NumberToString(m.m11()), NumberToString(m.m12()), NumberToString(m.m13()),
-                             NumberToString(m.m21()), NumberToString(m.m22()), NumberToString(m.m23()),
-                             NumberToString(m.m31()), NumberToString(m.m32()), NumberToString(m.m33())};
+    QStringList const matrix{NumberToString(m.m11()),
+                             NumberToString(m.m12()),
+                             NumberToString(m.m13()),
+                             NumberToString(m.m21()),
+                             NumberToString(m.m22()),
+                             NumberToString(m.m23()),
+                             NumberToString(m.m31()),
+                             NumberToString(m.m32()),
+                             NumberToString(m.m33())};
     return matrix.join(';'_L1);
 }
 } // namespace
@@ -326,7 +333,7 @@ VAbstractPattern::VAbstractPattern(QObject *parent)
     history(QVector<VToolRecord>()),
     modified(false),
     m_patternGraph(new VPatternGraph()),
-    m_patternBlockMapper(new VPatternBlockMapper(this))
+    m_patternBlockMapper(new VPatternBlockMapper())
 {
     connect(qApp, &QCoreApplication::aboutToQuit, this, &VAbstractPattern::CancelFormulaDependencyChecks);
 }
@@ -334,6 +341,14 @@ VAbstractPattern::VAbstractPattern(QObject *parent)
 //---------------------------------------------------------------------------------------------------------------------
 VAbstractPattern::~VAbstractPattern()
 {
+    CancelFormulaDependencyChecks();
+
+    // Must be deleted before the QDomDocument base destructs. VDomDocument declares QObject before QDomDocument, so
+    // QDomDocument::~QDomDocument() runs before QObject::~QObject(). The QDomElement objects stored in
+    // VPatternBlockMapper must be released while the DOM nodes are still alive to avoid a double-free.
+    qCDebug(vXML) << "Destroying VAbstractPattern: releasing block mapper" << m_patternBlockMapper->Size() << "blocks.";
+    delete m_patternBlockMapper;
+
     qDeleteAll(toolsOnRemove);
     toolsOnRemove.clear();
     delete m_patternGraph;
@@ -349,8 +364,8 @@ auto VAbstractPattern::RequiresMeasurements() const -> bool
 auto VAbstractPattern::ListMeasurements() const -> QStringList
 {
     const QFuture<QStringList> futureIncrements = QtConcurrent::run([this]() { return ListIncrements(); });
-    const QList<QString> tokens =
-        ConvertToList(QtConcurrent::blockingMappedReduced(ListExpressions(), GetTokens, GatherTokens));
+    const QList<QString> tokens = ConvertToList(
+        QtConcurrent::blockingMappedReduced(ListExpressions(), GetTokens, GatherTokens));
 
     QSet<QString> measurements;
     QSet<QString> others = ConvertToSet<QString>(futureIncrements.result());
@@ -472,7 +487,8 @@ void VAbstractPattern::setXMLContent(const QString &fileName)
 //---------------------------------------------------------------------------------------------------------------------
 void VAbstractPattern::Clear()
 {
-    clear();
+    CancelFormulaDependencyChecks();
+    VDomDocument::Clear();
     m_patternNumber.clear();
     m_labelDateFormat.clear();
     m_patternName.clear();
@@ -481,6 +497,8 @@ void VAbstractPattern::Clear()
     m_companyName.clear();
     m_units = Unit::LAST_UNIT_DO_NOT_USE;
     modified = false;
+    m_patternBlockMapper->Clear();
+    m_patternGraph->Clear();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -506,6 +524,9 @@ void VAbstractPattern::AddTool(quint32 id, VDataTool *tool)
     Q_ASSERT_X(id != 0, Q_FUNC_INFO, "id == 0");
     SCASSERT(tool != nullptr)
     tools.insert(id, tool);
+    // When a tool is deleted (e.g. when an undo command frees a piece and its children), remove
+    // it from the map automatically so no dangling pointer remains for LiteParseTree.
+    connect(tool, &QObject::destroyed, [id]() -> void { tools.remove(id); });
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -597,10 +618,12 @@ auto VAbstractPattern::ParseSANode(const QDomElement &domElement) -> VPieceNode
     const bool reverse = VDomDocument::GetParametrUInt(domElement, VAbstractPattern::AttrNodeReverse, QChar('0'));
     const bool excluded = VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrNodeExcluded, falseStr);
     const bool uniqeness = VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrCheckUniqueness, trueStr);
-    const QString saBefore =
-        VDomDocument::GetParametrString(domElement, VAbstractPattern::AttrSABefore, currentSeamAllowance);
-    const QString saAfter =
-        VDomDocument::GetParametrString(domElement, VAbstractPattern::AttrSAAfter, currentSeamAllowance);
+    const QString saBefore = VDomDocument::GetParametrString(domElement,
+                                                             VAbstractPattern::AttrSABefore,
+                                                             currentSeamAllowance);
+    const QString saAfter = VDomDocument::GetParametrString(domElement,
+                                                            VAbstractPattern::AttrSAAfter,
+                                                            currentSeamAllowance);
     const auto angle = static_cast<PieceNodeAngle>(VDomDocument::GetParametrUInt(domElement, AttrAngle, QChar('0')));
 
     const bool passmark = VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrNodePassmark, falseStr);
@@ -609,25 +632,30 @@ auto VAbstractPattern::ParseSANode(const QDomElement &domElement) -> VPieceNode
     const PassmarkAngleType passmarkAngleType = StringToPassmarkAngleType(
         VDomDocument::GetParametrString(domElement, VAbstractPattern::AttrNodePassmarkAngle, strStraightforward));
 
-    const bool showSecond =
-        VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrNodeShowSecondPassmark, trueStr);
-    const bool passmarkOpening =
-        VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrNodePassmarkOpening, falseStr);
+    const bool showSecond = VDomDocument::GetParametrBool(domElement,
+                                                          VAbstractPattern::AttrNodeShowSecondPassmark,
+                                                          trueStr);
+    const bool passmarkOpening = VDomDocument::GetParametrBool(domElement,
+                                                               VAbstractPattern::AttrNodePassmarkOpening,
+                                                               falseStr);
     const bool notMirrored = VDomDocument::GetParametrBool(domElement,
                                                            VAbstractPattern::AttrNodePassmarkNotMirrored,
                                                            falseStr);
 
-    const bool manualPassmarkLength =
-        VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrManualPassmarkLength, falseStr);
-    const QString passmarkLength =
-        VDomDocument::GetParametrEmptyString(domElement, VAbstractPattern::AttrPassmarkLength);
+    const bool manualPassmarkLength = VDomDocument::GetParametrBool(domElement,
+                                                                    VAbstractPattern::AttrManualPassmarkLength,
+                                                                    falseStr);
+    const QString passmarkLength = VDomDocument::GetParametrEmptyString(domElement,
+                                                                        VAbstractPattern::AttrPassmarkLength);
 
-    const bool manualPassmarkWidth =
-        VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrManualPassmarkWidth, falseStr);
+    const bool manualPassmarkWidth = VDomDocument::GetParametrBool(domElement,
+                                                                   VAbstractPattern::AttrManualPassmarkWidth,
+                                                                   falseStr);
     const QString passmarkWidth = VDomDocument::GetParametrEmptyString(domElement, VAbstractPattern::AttrPassmarkWidth);
 
-    const bool manualPassmarkAngle =
-        VDomDocument::GetParametrBool(domElement, VAbstractPattern::AttrManualPassmarkAngle, falseStr);
+    const bool manualPassmarkAngle = VDomDocument::GetParametrBool(domElement,
+                                                                   VAbstractPattern::AttrManualPassmarkAngle,
+                                                                   falseStr);
     const QString passmarkAngle = VDomDocument::GetParametrEmptyString(domElement, VAbstractPattern::AttrPassmarkAngle);
 
     const QString passmarkVisibility = VDomDocument::GetParametrString(domElement,
@@ -639,8 +667,10 @@ auto VAbstractPattern::ParseSANode(const QDomElement &domElement) -> VPieceNode
     const QString t = VDomDocument::GetParametrString(domElement, AttrType, VAbstractPattern::NodePoint);
     Tool tool = Tool::LAST_ONE_DO_NOT_USE;
 
-    switch (const QStringList types{VAbstractPattern::NodePoint, VAbstractPattern::NodeArc,
-                                    VAbstractPattern::NodeSpline, VAbstractPattern::NodeSplinePath,
+    switch (const QStringList types{VAbstractPattern::NodePoint,
+                                    VAbstractPattern::NodeArc,
+                                    VAbstractPattern::NodeSpline,
+                                    VAbstractPattern::NodeSplinePath,
                                     VAbstractPattern::NodeElArc};
             types.indexOf(t))
     {
@@ -1381,11 +1411,66 @@ auto VAbstractPattern::PatternGraph() const -> VPatternGraph *
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void VAbstractPattern::ProcessFormulaDependencies(const QString &formula, quint32 id,
+                                                   const QHash<QString, QList<quint32>> &variables,
+                                                   quint64 generation)
+{
+    QList<QString> tokens;
+    try
+    {
+        QScopedPointer<qmu::QmuTokenParser> const cal(new qmu::QmuTokenParser(formula, false, false));
+        tokens = cal->GetTokens().values();
+    }
+    catch (qmu::QmuParserError &e)
+    {
+        qDebug() << "\nMath parser error:\n"
+                 << "--------------------------------------\n"
+                 << "Message:     " << e.GetMsg() << "\n"
+                 << "Expression:  " << e.GetExpr() << "\n"
+                 << "--------------------------------------";
+        return;
+    }
+
+    int checkCounter = 0;
+    const int checkInterval = 10; // Check every 10 iterations
+
+    for (const auto &token : std::as_const(tokens))
+    {
+        if (++checkCounter >= checkInterval && m_dependencyCheckGeneration.load() != generation)
+        {
+            return;
+        }
+
+        if (!variables.contains(token))
+        {
+            continue;
+        }
+
+        QList<quint32> const references = variables.value(token);
+        for (const auto &ref : references)
+        {
+            if (ref > NULL_ID && ref != id)
+            {
+                m_patternGraph->AddEdge(ref, id);
+            }
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VAbstractPattern::FindFormulaDependencies(const QString &formula,
                                                quint32 id,
                                                const QHash<QString, QList<quint32>> &variables)
 {
     if (formula.isEmpty() || id == NULL_ID || variables.isEmpty())
+    {
+        return;
+    }
+
+    // The dependency-graph topology is fixed during a value-only (lite) reparse, so skip building
+    // edges here. AddEdge would no-op anyway, but returning early also avoids the per-formula
+    // tokenization and the QtConcurrent task spawned below.
+    if (m_patternGraph == nullptr || !m_patternGraph->IsGraphRebuildEnabled())
     {
         return;
     }
@@ -1397,51 +1482,10 @@ void VAbstractPattern::FindFormulaDependencies(const QString &formula,
     connect(watcher, &QFutureWatcher<void>::finished, this, &VAbstractPattern::CleanDependenciesWatcher);
 
     // Create the async task
+    const quint64 generation = m_dependencyCheckGeneration.load();
     QFuture<void> const future = QtConcurrent::run(
-        [this, formula, id, variables]() -> void
-        {
-            QList<QString> tokens;
-            try
-            {
-                QScopedPointer<qmu::QmuTokenParser> const cal(new qmu::QmuTokenParser(formula, false, false));
-                tokens = cal->GetTokens().values();
-            }
-            catch (qmu::QmuParserError &e)
-            {
-                qDebug() << "\nMath parser error:\n"
-                         << "--------------------------------------\n"
-                         << "Message:     " << e.GetMsg() << "\n"
-                         << "Expression:  " << e.GetExpr() << "\n"
-                         << "--------------------------------------";
-                return;
-            }
-
-            const QThread *currentThread = QThread::currentThread();
-            int checkCounter = 0;
-            const int checkInterval = 10; // Check every 10 iterations
-
-            for (const auto &token : std::as_const(tokens))
-            {
-                if (++checkCounter >= checkInterval && currentThread->isInterruptionRequested())
-                {
-                    return;
-                }
-
-                if (!variables.contains(token))
-                {
-                    continue;
-                }
-
-                QList<quint32> const references = variables.value(token);
-                for (const auto &ref : references)
-                {
-                    if (ref > NULL_ID && ref != id)
-                    {
-                        m_patternGraph->AddEdge(ref, id);
-                    }
-                }
-            }
-        });
+        [this, formula, id, variables, generation]() -> void
+        { ProcessFormulaDependencies(formula, id, variables, generation); });
 
     watcher->setFuture(future);
 
@@ -1632,8 +1676,7 @@ auto VAbstractPattern::ListExpressions() const -> QVector<VFormulaField>
     auto futureOperationExpressions = QtConcurrent::run([this]() { return ListOperationExpressions(); });
     auto futurePathExpressions = QtConcurrent::run([this]() { return ListPathExpressions(); });
     auto futurePieceExpressions = QtConcurrent::run([this]() { return ListPieceExpressions(); });
-    auto futureFinalMeasurementsExpressions =
-        QtConcurrent::run([this]() { return ListFinalMeasurementsExpressions(); });
+    auto futureFinalMeasurementsExpressions = QtConcurrent::run([this]() { return ListFinalMeasurementsExpressions(); });
 
     QVector<VFormulaField> list;
     list << futurePointExpressions.result();
@@ -2073,7 +2116,9 @@ void VAbstractPattern::SetFMeasurements(QDomElement &element, const QVector<VFin
 
             SetAttribute(tagFMeasurement, AttrName, m.name);
             SetAttribute(tagFMeasurement, AttrFormula, m.formula);
-            SetAttributeOrRemoveIf<QString>(tagFMeasurement, AttrDescription, m.description,
+            SetAttributeOrRemoveIf<QString>(tagFMeasurement,
+                                            AttrDescription,
+                                            m.description,
                                             [](const QString &description) noexcept { return description.isEmpty(); });
 
             element.appendChild(tagFMeasurement);
@@ -2103,7 +2148,7 @@ auto VAbstractPattern::GetBackgroundPatternImage(const QDomElement &element) con
     image.SetZValue(GetParametrUInt(element, AttrZValue, QChar('0')));
     image.SetVisible(GetParametrBool(element, AttrVisible, trueStr));
 
-    VValentinaSettings  const*settings = VAbstractValApplication::VApp()->ValentinaSettings();
+    VValentinaSettings const *settings = VAbstractValApplication::VApp()->ValentinaSettings();
     image.SetOpacity(
         GetParametrDouble(element, AttrOpacity, QString::number(settings->GetBackgroundImageDefOpacity() / 100.)));
 
@@ -2116,7 +2161,6 @@ auto VAbstractPattern::GetBackgroundPatternImage(const QDomElement &element) con
 //---------------------------------------------------------------------------------------------------------------------
 auto VAbstractPattern::GetBackgroundImageElement(const QUuid &id) const -> QDomElement
 {
-
     if (const QDomNodeList list = elementsByTagName(TagBackgroundImages); not list.isEmpty())
     {
         if (QDomElement const imagesTag = list.at(0).toElement(); not imagesTag.isNull())
@@ -2156,22 +2200,29 @@ void VAbstractPattern::WriteBackgroundImage(QDomElement &element, const VBackgro
     }
     else
     {
-        SetAttributeOrRemoveIf<QString>(element, AttrContentType, image.ContentType(),
+        SetAttributeOrRemoveIf<QString>(element,
+                                        AttrContentType,
+                                        image.ContentType(),
                                         [](const QString &contentType) noexcept { return contentType.isEmpty(); });
         setTagText(element, image.ContentData());
-        SetAttributeOrRemoveIf<QString>(element, AttrPath, image.FilePath(),
+        SetAttributeOrRemoveIf<QString>(element,
+                                        AttrPath,
+                                        image.FilePath(),
                                         [](const QString &path) noexcept { return path.isEmpty(); });
     }
 
-    SetAttributeOrRemoveIf<QString>(element, AttrName, image.Name(),
+    SetAttributeOrRemoveIf<QString>(element,
+                                    AttrName,
+                                    image.Name(),
                                     [](const QString &name) noexcept { return name.isEmpty(); });
     SetAttribute(element, AttrTransform, TransformToString(image.Matrix()));
 
     SetAttributeOrRemoveIf<bool>(element, AttrHold, image.Hold(), [](bool hold) noexcept { return not hold; });
-    SetAttributeOrRemoveIf<qreal>(element, AttrZValue, image.ZValue(),
-                                  [](qreal z) noexcept { return qFuzzyIsNull(z); });
+    SetAttributeOrRemoveIf<qreal>(element, AttrZValue, image.ZValue(), [](qreal z) noexcept { return qFuzzyIsNull(z); });
     SetAttributeOrRemoveIf<bool>(element, AttrVisible, image.Visible(), [](bool visible) noexcept { return visible; });
-    SetAttributeOrRemoveIf<qreal>(element, AttrOpacity, image.Opacity(),
+    SetAttributeOrRemoveIf<qreal>(element,
+                                  AttrOpacity,
+                                  image.Opacity(),
                                   [](qreal o) noexcept { return VFuzzyComparePossibleNulls(o, 1); });
 }
 
@@ -2240,8 +2291,11 @@ auto VAbstractPattern::CreateGroups(const QString &patternPieceName) -> QDomElem
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VAbstractPattern::CreateGroup(quint32 id, const QString &name, const QStringList &tags,
-                                   const QMap<quint32, quint32> &groupData, vidtype tool) -> QDomElement
+auto VAbstractPattern::CreateGroup(quint32 id,
+                                   const QString &name,
+                                   const QStringList &tags,
+                                   const QMap<quint32, quint32> &groupData,
+                                   vidtype tool) -> QDomElement
 {
     if (id == NULL_ID)
     {
@@ -2255,7 +2309,9 @@ auto VAbstractPattern::CreateGroup(quint32 id, const QString &name, const QStrin
     SetAttribute(group, AttrName, name);
     SetAttribute(group, AttrVisible, true);
     SetAttributeOrRemoveIf<vidtype>(group, AttrTool, tool, [](vidtype tool) noexcept { return tool == null_id; });
-    SetAttributeOrRemoveIf<QString>(group, AttrTags, preparedTags,
+    SetAttributeOrRemoveIf<QString>(group,
+                                    AttrTags,
+                                    preparedTags,
                                     [](const QString &preparedTags) noexcept { return preparedTags.isEmpty(); });
 
     auto i = groupData.constBegin();
@@ -2263,7 +2319,9 @@ auto VAbstractPattern::CreateGroup(quint32 id, const QString &name, const QStrin
     {
         QDomElement item = createElement(TagGroupItem);
         item.setAttribute(AttrTool, i.value());
-        SetAttributeOrRemoveIf<vidtype>(item, AttrObject, i.key(),
+        SetAttributeOrRemoveIf<vidtype>(item,
+                                        AttrObject,
+                                        i.key(),
                                         [i](vidtype object) noexcept { return object == i.value(); });
         group.appendChild(item);
         ++i;
@@ -2332,7 +2390,9 @@ void VAbstractPattern::SetGroupTags(quint32 id, const QStringList &tags)
 {
     if (QDomElement group = FindElementById(id, TagGroup); group.isElement())
     {
-        SetAttributeOrRemoveIf<QString>(group, AttrTags, tags.join(','_L1),
+        SetAttributeOrRemoveIf<QString>(group,
+                                        AttrTags,
+                                        tags.join(','_L1),
                                         [](const QString &rawTags) noexcept { return rawTags.isEmpty(); });
         modified = true;
         emit patternChanged(false);
@@ -2455,8 +2515,7 @@ auto VAbstractPattern::GetGroups(const QString &patternPieceName) -> QMap<quint3
             {
                 if (domNode.isElement())
                 {
-                    if (const QDomElement group = domNode.toElement();
-                        not group.isNull() && group.tagName() == TagGroup)
+                    if (const QDomElement group = domNode.toElement(); not group.isNull() && group.tagName() == TagGroup)
                     {
                         items.resize(0);
 
@@ -2535,8 +2594,10 @@ auto VAbstractPattern::GetGroupsContainingItem(quint32 toolId, quint32 objectId,
                     if ((containItem && groupHasItem) || (not containItem && not groupHasItem))
                     {
                         const quint32 groupId = GetParametrUInt(group, AttrId, QChar('0'));
-                        const QString name = GetParametrString(
-                            group, AttrName, QCoreApplication::translate("VAbstractPattern", "New group"));
+                        const QString name = GetParametrString(group,
+                                                               AttrName,
+                                                               QCoreApplication::translate("VAbstractPattern",
+                                                                                           "New group"));
                         data.insert(groupId, name);
                     }
                 }
@@ -2584,6 +2645,12 @@ auto VAbstractPattern::GroupHasItem(const QDomElement &groupDomElement, quint32 
         itemNode = itemNode.nextSibling();
     }
     return result;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VAbstractPattern::SaveSchema() const -> QString
+{
+    return VPatternConverter::CurrentSchema;
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2661,6 +2728,8 @@ auto VAbstractPattern::ReadCompanyName() const -> QString
 //---------------------------------------------------------------------------------------------------------------------
 void VAbstractPattern::CancelFormulaDependencyChecks()
 {
+    ++m_dependencyCheckGeneration;
+
     QList<QFutureWatcher<void> *> watchersCopy;
 
     {

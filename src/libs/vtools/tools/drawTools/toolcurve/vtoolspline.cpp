@@ -425,7 +425,7 @@ void VToolSpline::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSpline::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
-    if (!IsMovable())
+    if (!IsMovable() || !(flags() & QGraphicsItem::ItemIsMovable))
     {
         return;
     }
@@ -751,5 +751,6 @@ auto VToolSpline::GatherToolChanges() const -> VToolAbstractBezier::ToolChanges
             .oldP4Label = oldCurve->GetP4().name(),
             .newP4Label = newCurve.GetP4().name(),
             .oldAliasSuffix = oldCurve->GetAliasSuffix(),
-            .newAliasSuffix = newCurve.GetAliasSuffix()};
+            .newAliasSuffix = newCurve.GetAliasSuffix(),
+            .newDuplicate = newCurve.GetDuplicate()};
 }

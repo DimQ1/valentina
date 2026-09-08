@@ -93,7 +93,7 @@ public:
     static auto ClearMessage(QString msg) -> QString;
 
     static const QString warningMessageSignature;
-    auto IsWarningMessage(const QString &message) const -> bool;
+    static auto IsWarningMessage(const QString &message) -> bool;
 
     auto NativeFileDialog(QFileDialog::Options options = QFileDialog::Options()) const -> QFileDialog::Options;
 
@@ -124,6 +124,8 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, hicpp-avoid-c-arrays, modernize-avoid-c-arrays)
     static void InitHighDpiScaling(int argc, char *argv[]);
 #endif
+
+    static void LogScreenInfo();
 
     static auto LogDirPath() -> QString;
     static auto CreateLogDir() -> bool;

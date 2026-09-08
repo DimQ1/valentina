@@ -68,6 +68,7 @@ public:
     void SetShowParentTooltip(bool show);
 
     void SetRealPos(const QPointF &pos);
+    auto GetRealPos() const -> QPointF { return m_realPos; }
 
     void SetDestination(const QPointF &destination);
 
@@ -79,6 +80,8 @@ public:
 
     auto GetTextHoverColor() const -> VColorRole;
     void SetTextHoverColor(VColorRole newTextHoverColor);
+
+    void SetFontAdjustRatio(qreal ration);
 
 signals:
     /**
@@ -95,6 +98,8 @@ signals:
     void PointChoosed();
     void PointSelected(bool selected);
     void UpdateLine();
+    void HoverCurve(bool hover);
+    void LabelHovered(bool hovered);
 
 protected:
     auto itemChange(GraphicsItemChange change, const QVariant &value) -> QVariant override;
@@ -118,6 +123,7 @@ private:
     bool m_hoverFlag{false};
     VColorRole m_textColor;
     VColorRole m_textHoverColor;
+    qreal m_fontAdjustRatio{1.0}; // 1.0 = same size, 0.6 = 60% of primary
 
     void Init();
 

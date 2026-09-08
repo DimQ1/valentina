@@ -99,6 +99,9 @@ public:
 
     void Clear();
 
+    void SetGraphRebuildEnabled(bool enabled);
+    auto IsGraphRebuildEnabled() const -> bool;
+
     template<typename Func>
     void WithReadLock(Func &&func) const;
 
@@ -133,6 +136,12 @@ private:
     // Fast bidirectional mapping between node IDs and internal vertex IDs
     QHash<vidtype, vertex_id_t> m_idToVertex{}; // node ID -> vertex_id_t
     QHash<vertex_id_t, vidtype> m_vertexToId{}; // vertex_id_t -> node ID
+
+    // When false, AddVertex/AddEdge are no-ops and FindFormulaDependencies is skipped. Set to false
+    // during reparses that cannot change the graph topology (LitePPParse and FullLiteParse - i.e.
+    // values-only changes such as a size switch or measurement sync). NOT disabled for LiteParse,
+    // which follows a tool edit whose changed formula may alter dependencies.
+    bool m_graphRebuildEnabled{true};
 };
 
 //---------------------------------------------------------------------------------------------------------------------

@@ -18,6 +18,12 @@
 # KDE directory preferences
 .directory
 
+# Local AI assistant tool config
+.claude/
+.serena/
+.superpowers/
+docs/superpowers/
+
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
 
@@ -190,3 +196,7 @@ bw-output
 /graph_info.json
 /deactivate_conanrun.sh
 /deactivate_conanbuild.sh
+/compile_commands.json
+
+.cache
+/graphify-out

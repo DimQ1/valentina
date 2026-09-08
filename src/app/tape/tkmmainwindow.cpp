@@ -32,7 +32,6 @@
 #include "../vformat/knownmeasurements/vknownmeasurementsdocument.h"
 #include "../vganalytics/vganalytics.h"
 #include "../vmisc/compatibility.h"
-#include "../vmisc/defglobal.h"
 #include "../vmisc/dialogs/dialogaskcollectstatistic.h"
 #include "../vmisc/dialogs/dialogexporttocsv.h"
 #include "../vmisc/dialogs/dialogselectlanguage.h"
@@ -41,6 +40,7 @@
 #include "../vmisc/theme/themeDef.h"
 #include "../vmisc/theme/vtheme.h"
 #include "../vmisc/vsysexits.h"
+#include "../vwidgets/vscrollablemenu.h"
 #include "dialogs/dialogabouttape.h"
 #include "dialogs/dialogknownmeasurementscsvcolumns.h"
 #include "knownmeasurements/vknownmeasurements.h"
@@ -61,6 +61,7 @@
 #include <QMimeType>
 #include <QPainter>
 #include <QPlainTextEdit>
+#include <QProcess>
 #include <QStringListModel>
 #include <QTimer>
 #include <QUuid>
@@ -111,7 +112,7 @@ enum class MUnits : qint8
 TKMMainWindow::TKMMainWindow(QWidget *parent)
   : VAbstractMainWindow(parent),
     ui(new Ui::TKMMainWindow),
-    m_searchHistory(new QMenu(this))
+    m_searchHistory(new VScrollableMenu(this))
 {
     ui->setupUi(this);
 
@@ -225,7 +226,8 @@ auto TKMMainWindow::LoadFile(const QString &path) -> bool
         m_m = new VKnownMeasurementsDocument();
         m_m->setXMLContent(converter.Convert());
 
-        if (const VCommonSettings *settings = VAbstractApplication::VApp()->Settings(); settings->IsCollectStatistic())
+        if (const VCommonSettings *settings = VAbstractApplication::VApp()->Settings();
+            MApplication::VApp()->IsAppInGUIMode() && settings->IsCollectStatistic())
         {
             auto *statistic = VGAnalytics::Instance();
 
@@ -263,6 +265,9 @@ auto TKMMainWindow::LoadFile(const QString &path) -> bool
 
         if (ui->listWidget->count() > 0)
         {
+            // Block signals so selecting the first image does not overwrite the shared diagram label,
+            // which is also driven by the measurements tab.
+            const QSignalBlocker blocker(ui->listWidget);
             ui->listWidget->setCurrentRow(0);
         }
 
@@ -1589,14 +1594,13 @@ void TKMMainWindow::SaveImageTitle()
         ui->listWidget->setCurrentRow(row);
     }
 
-    ShowMData();
+    ShowImageData();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void TKMMainWindow::SaveImageSizeScale()
 {
     auto *item = ui->listWidget->currentItem();
-    int const row = ui->listWidget->currentRow();
 
     if (item == nullptr)
     {
@@ -1607,15 +1611,10 @@ void TKMMainWindow::SaveImageSizeScale()
 
     MeasurementsWereSaved(false);
 
+    // The size scale does not affect the list thumbnails (scaled to a fixed iconSize) or any
+    // visible widget, so there is no need to rebuild the image list or the measurement panel
+    // here. Just invalidate the cache; it is reloaded lazily on the next access.
     m_known = VKnownMeasurements();
-    RefreshImages();
-
-    {
-        const QSignalBlocker blocker(ui->listWidget);
-        ui->listWidget->setCurrentRow(row);
-    }
-
-    ShowMData();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1721,6 +1720,10 @@ void TKMMainWindow::RefreshMeasurementImagePreview(int index)
     else if (index == ui->tabWidget->indexOf(ui->tabImages))
     {
         ShowImageData();
+        // The image list is populated while the Images tab is still hidden, so its viewport has no
+        // valid width and the IconMode flow lays every item into a single column. Force a relayout
+        // now that the tab is visible and the viewport has its real size.
+        ui->listWidget->doItemsLayout();
         lastSelectedTab = ui->tabWidget->indexOf(ui->tabImages);
         ui->actionAddKnown->setEnabled(false);
     }
@@ -1768,7 +1771,7 @@ void TKMMainWindow::SetupMenu()
             });
     connect(ui->actionPreferences, &QAction::triggered, this, [this]() { MApplication::VApp()->Preferences(this); });
 
-    for (auto &recentFileAct : m_recentFileActs)
+    for (QAction *&recentFileAct : m_recentFileActs)
     {
         auto *action = new QAction(this);
         recentFileAct = action;
@@ -2033,7 +2036,6 @@ void TKMMainWindow::InitSearch()
                 m_search->Find(ui->lineEditFind->text());
             });
 
-    m_searchHistory->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
     InitSearchHistory();
     ui->pushButtonSearch->setMenu(m_searchHistory);
     ui->pushButtonSearch->setProperty("hasMenu", true);
@@ -2245,18 +2247,18 @@ void TKMMainWindow::InitIcons()
 void TKMMainWindow::InitSearchHistory()
 {
     QStringList const searchHistory = MApplication::VApp()->TapeSettings()->GetTapeSearchHistory();
-    m_searchHistory->clear();
+    m_searchHistory->Clear();
 
     if (searchHistory.isEmpty())
     {
-        QAction *action = m_searchHistory->addAction('<'_L1 + tr("Empty", "list") + '>'_L1);
+        QAction *action = m_searchHistory->AddAction('<'_L1 + tr("Empty", "list") + '>'_L1);
         action->setDisabled(true);
         return;
     }
 
     for (const auto &term : searchHistory)
     {
-        QAction *action = m_searchHistory->addAction(term);
+        QAction *action = m_searchHistory->AddAction(term);
         action->setData(term);
         connect(action, &QAction::triggered, this,
                 [this]()

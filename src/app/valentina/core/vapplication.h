@@ -72,6 +72,7 @@ public:
     auto TrVars() -> const VTranslateVars * override;
 
     auto static IsGUIMode() -> bool;
+    static auto LogPath() -> QString;
     auto IsAppInGUIMode() const -> bool override;
     auto IsPedantic() const -> bool override;
     auto GlobalCurveApproximationScale() -> qreal override;
@@ -102,8 +103,10 @@ private:
     VKnownMeasurementsDatabase *m_knownMeasurementsDatabase{nullptr};
     QFileSystemWatcher *m_knownMeasurementsDatabaseWatcher{nullptr};
 
-    static auto LogPath() -> QString;
+    bool m_appCloseEventSent{false};
+
     void BeginLogging();
+    void SendAppCloseStatistic();
 };
 
 //---------------------------------------------------------------------------------------------------------------------

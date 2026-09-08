@@ -11,10 +11,17 @@ Project {
     property bool conanWithCrashReporting: false
     property bool conanWithICU: false
     property bool conanWithICONV: false
+    property bool conanWithImmer: false
     property string minimumMacosVersion: undefined
     property string minimumQtVersion: "5.15"
     property stringList conanProfiles: []
-    property bool enableSigning: true
+
+    property bool enableSigning: {
+        if (qbs.targetOS.contains("macos"))
+            return true;
+
+        return false;
+    }
 
     // Enable the QTextCodec API and support for character encodings.
     // Required for any text codec functionality.
@@ -36,7 +43,8 @@ Project {
     property string conanInstallPath: conanProbe.generatedFilesPath
     ConanfileProbe {
         id: conanProbe
-        condition: enableConan && (conanWithXerces || conanWithCrashReporting || conanWithICU || conanWithICONV)
+        condition: enableConan && (conanWithXerces || conanWithCrashReporting || conanWithICU || conanWithICONV ||
+                                   conanWithImmer)
         conanfilePath: project.sourceDirectory + "/conanfile.py"
         verbose: true
         generators: []
@@ -46,6 +54,7 @@ Project {
             console.info("* crash reporting: " + conanWithCrashReporting);
             console.info("* ICU: " + conanWithICU);
             console.info("* ICONV: " + conanWithICONV);
+            console.info("* immer: " + conanWithImmer);
 
             var o = {};
             if (conanWithXerces)
@@ -58,6 +67,9 @@ Project {
                 o['&:with_icu'] = "True";
             else if (conanWithICONV)
                 o['&:with_iconv'] = "True";
+
+            if (conanWithImmer)
+                o['&:with_immer'] = "True";
 
             return o;
         }
@@ -106,6 +118,16 @@ Project {
         environment: {
             var env = base;
 
+	    // QT_QPA_PLATFORM
+            for (var i = 0; i < env.length; ++i) {
+                if (env[i].startsWith("QT_QPA_PLATFORM=")) {
+                    break;
+                }
+            }
+            if (i >= env.length) {
+                env.push("QT_QPA_PLATFORM=offscreen");
+            }
+ 
             if (qbs.targetOS.contains("unix") && !qbs.targetOS.contains("macos")) {
                 env.push("LD_LIBRARY_PATH=" + qbs.installRoot + qbs.installPrefix + "/" + buildconfig.libDirName + "/valentina");
             } else if (qbs.targetOS.contains("windows")) {
@@ -130,20 +152,25 @@ Project {
                     env[i] = arrayElem;
                 else
                     env.push(arrayElem);
+            }
 
-                // QT_QPA_PLATFORM_PLUGIN_PATH
-                for (var i = 0; i < env.length; ++i) {
-                    if (env[i].startsWith("QT_QPA_PLATFORM_PLUGIN_PATH=")) {
+            // QT_QPA_PLATFORM_PLUGIN_PATH
+            // On macOS and Windows the test binaries do not search the Qt SDK plugins
+            // directory at run time, so the forced "offscreen" platform plugin is not
+            // found beside the executable (only the default platform plugin is deployed
+            // there). Point Qt at the SDK's "platforms" directory, which ships
+            // libqoffscreen, so the headless plugin can be loaded.
+            if (qbs.targetOS.contains("macos") || qbs.targetOS.contains("windows")) {
+                for (var k = 0; k < env.length; ++k) {
+                    if (env[k].startsWith("QT_QPA_PLATFORM_PLUGIN_PATH=")) {
                         break;
                     }
                 }
 
-                if (i >= env.length) {
-                    var pluginsPath = "QT_QPA_PLATFORM_PLUGIN_PATH=" + FileInfo.joinPaths(Qt.core.pluginPath, "platforms")
-                    env.push(pluginsPath);
+                if (k >= env.length) {
+                    env.push("QT_QPA_PLATFORM_PLUGIN_PATH="
+                             + FileInfo.joinPaths(Qt.core.pluginPath, "platforms"));
                 }
-
-                console.info("env_after: " + env);
             }
             return env;
         }

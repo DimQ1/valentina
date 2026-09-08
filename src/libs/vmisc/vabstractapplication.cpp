@@ -38,10 +38,12 @@
 #include <QDirIterator>
 #include <QFileSystemWatcher>
 #include <QFuture>
+#include <QGuiApplication>
 #include <QLibraryInfo>
 #include <QLoggingCategory>
 #include <QMessageLogger>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QStandardPaths>
 #include <QTimeZone>
 #include <QTranslator>
@@ -76,13 +78,20 @@ auto FilterLocales(const QStringList &locales) -> QStringList
     QStringList filtered;
     for (const auto &locale : locales)
     {
-        if (not locale.startsWith("ir"_L1))
+        if (not locale.startsWith("ir"_L1, Qt::CaseInsensitive))
         {
             filtered.append(locale);
         }
     }
 
     return filtered;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// Extra check on top of FilterLocales(): reject a candidate by file name regardless of how it was built.
+auto IsExcludedQmFile(const QString &qmFileName) -> bool
+{
+    return qmFileName.contains("_ru"_L1, Qt::CaseInsensitive);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -102,7 +111,13 @@ auto LoadQM(QTranslator *translator, const QString &filename, const QString &loc
 
     for (auto &locale : languages)
     {
-        const bool loaded = translator->load(filename + locale, qmDir);
+        const QString qmFileName = filename + locale;
+        if (IsExcludedQmFile(qmFileName))
+        {
+            continue;
+        }
+
+        const bool loaded = translator->load(qmFileName, qmDir);
         if (loaded)
         {
             return loaded;
@@ -110,6 +125,50 @@ auto LoadQM(QTranslator *translator, const QString &filename, const QString &loc
     }
 
     return false;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto DumpScreen(const QScreen *screen) -> QString
+{
+    if (screen == nullptr)
+    {
+        return QStringLiteral("<null screen>");
+    }
+
+    QString info;
+    QDebug dbg(&info);
+    dbg.nospace() << "name=" << screen->name() << " manufacturer=" << screen->manufacturer()
+                  << " model=" << screen->model() << " serial=" << screen->serialNumber()
+                  << " geometry=" << screen->geometry() << " available=" << screen->availableGeometry()
+                  << " DPR=" << screen->devicePixelRatio() << " logicalDPI=" << screen->logicalDotsPerInch()
+                  << " physicalDPI=" << screen->physicalDotsPerInch() << " depth=" << screen->depth()
+                  << " refreshRate=" << screen->refreshRate();
+    return info;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void ConnectScreenSignals(const QScreen *screen)
+{
+    if (screen == nullptr)
+    {
+        return;
+    }
+
+    QObject::connect(screen,
+                     &QScreen::geometryChanged,
+                     screen,
+                     [screen](const QRect &geometry)
+                     { qDebug() << "Screen geometry changed:" << geometry << "for" << DumpScreen(screen); });
+    QObject::connect(screen,
+                     &QScreen::logicalDotsPerInchChanged,
+                     screen,
+                     [screen](qreal dpi)
+                     { qDebug() << "Screen logical DPI changed:" << dpi << "for" << DumpScreen(screen); });
+    QObject::connect(screen,
+                     &QScreen::physicalDotsPerInchChanged,
+                     screen,
+                     [screen](qreal dpi)
+                     { qDebug() << "Screen physical DPI changed:" << dpi << "for" << DumpScreen(screen); });
 }
 } // namespace
 
@@ -340,7 +399,7 @@ void VAbstractApplication::WinAttachConsole()
 //---------------------------------------------------------------------------------------------------------------------
 void VAbstractApplication::LoadTranslation(QString locale)
 {
-    if (locale.startsWith("ir"_L1))
+    if (locale.startsWith("ir"_L1, Qt::CaseInsensitive))
     {
         locale = QString();
     }
@@ -439,7 +498,7 @@ auto VAbstractApplication::ClearMessage(QString msg) -> QString
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VAbstractApplication::IsWarningMessage(const QString &message) const -> bool
+auto VAbstractApplication::IsWarningMessage(const QString &message) -> bool
 {
     return VAbstractApplication::ClearMessage(message).startsWith(warningMessageSignature);
 }
@@ -485,8 +544,8 @@ void VAbstractApplication::RestartSVGFontDatabaseWatcher()
     if (m_svgFontDatabase != nullptr)
     {
         delete m_svgFontDatabaseWatcher;
-        m_svgFontDatabaseWatcher =
-            new QFileSystemWatcher({settings->GetPathSVGFonts(), VSvgFontDatabase::SystemSVGFontPath()});
+        m_svgFontDatabaseWatcher = new QFileSystemWatcher(
+            {settings->GetPathSVGFonts(), VSvgFontDatabase::SystemSVGFontPath()});
 
         if (m_svgFontDatabaseWatcher->thread() != this->thread())
         {
@@ -494,7 +553,9 @@ void VAbstractApplication::RestartSVGFontDatabaseWatcher()
         }
 
         m_svgFontDatabaseWatcher->setParent(this);
-        connect(m_svgFontDatabaseWatcher, &QFileSystemWatcher::directoryChanged, this,
+        connect(m_svgFontDatabaseWatcher,
+                &QFileSystemWatcher::directoryChanged,
+                this,
                 &VAbstractApplication::RepopulateFontDatabase);
     }
 }
@@ -514,7 +575,7 @@ auto VAbstractApplication::GetShortcutManager() const -> VAbstractShortcutManage
 //---------------------------------------------------------------------------------------------------------------------
 auto VAbstractApplication::GetPlaceholderTranslator() -> QSharedPointer<VTranslator>
 {
-    VCommonSettings  const*settings = Settings();
+    VCommonSettings const *settings = Settings();
 
     QString pieceLabelLocale = settings->GetPieceLabelLocale();
     if (pieceLabelLocale == VCommonSettings::defaultPieceLabelLocale)
@@ -522,16 +583,19 @@ auto VAbstractApplication::GetPlaceholderTranslator() -> QSharedPointer<VTransla
         pieceLabelLocale = settings->GetLocale();
     }
 
-    if (pieceLabelLocale.startsWith("ir"_L1))
+    if (pieceLabelLocale.startsWith("ir"_L1, Qt::CaseInsensitive))
     {
         return QSharedPointer<VTranslator>(new VTranslator);
     }
 
-    auto translator = QSharedPointer<VTranslator>(new VTranslator);
-    const QString appQmDir = VAbstractApplication::translationsPath(settings->GetLocale());
-    if (translator->load(QStringLiteral("valentina_") + pieceLabelLocale, appQmDir))
     {
-        return translator;
+        auto translator = QSharedPointer<VTranslator>(new VTranslator);
+        const QString appQmDir = VAbstractApplication::translationsPath(settings->GetLocale());
+        const QString qmFileName = QStringLiteral("valentina_") + pieceLabelLocale;
+        if (not IsExcludedQmFile(qmFileName) && translator->load(qmFileName, appQmDir))
+        {
+            return translator;
+        }
     }
 
     return QSharedPointer<VTranslator>(new VTranslator);
@@ -563,7 +627,7 @@ void VAbstractApplication::CacheTextCodec(QStringConverter::Encoding encoding, V
 void VAbstractApplication::CheckSystemLocale()
 {
     if (const QString defLocale = QLocale::system().name();
-        defLocale.startsWith("ir"_L1))
+        defLocale.startsWith("ir"_L1, Qt::CaseInsensitive))
     {
         QCoreApplication::exit();
         return;
@@ -586,8 +650,8 @@ void VAbstractApplication::RepopulateFontDatabase(const QString &path)
 {
     if (m_svgFontDatabase != nullptr)
     {
-        QFuture<void> const future =
-            QtConcurrent::run([this, path]() { m_svgFontDatabase->PopulateFontDatabase(path); });
+        QFuture<void> const future = QtConcurrent::run([this, path]() -> void
+                                                       { m_svgFontDatabase->PopulateFontDatabase(path); });
     }
 }
 
@@ -635,7 +699,9 @@ auto VAbstractApplication::LogDirPath() -> QString
         return QStringList{QCoreApplication::applicationDirPath(), logs, QCoreApplication::applicationName()}.join(
             QDir::separator());
 #else
-        return QStringList{QDir::homePath(), QCoreApplication::organizationName(), logs,
+        return QStringList{QDir::homePath(),
+                           QCoreApplication::organizationName(),
+                           logs,
                            QCoreApplication::applicationName()}
             .join(QDir::separator());
 #endif
@@ -643,9 +709,8 @@ auto VAbstractApplication::LogDirPath() -> QString
 #if defined(Q_OS_WINDOWS)
     auto path = QStringList{logDirPath, logs}.join(QDir::separator());
 #else
-    auto path =
-        QStringList{logDirPath, QCoreApplication::organizationName(), logs, QCoreApplication::applicationName()}.join(
-            QDir::separator());
+    auto path = QStringList{logDirPath, QCoreApplication::organizationName(), logs, QCoreApplication::applicationName()}
+                    .join(QDir::separator());
 #endif
     return path;
 }
@@ -658,6 +723,50 @@ auto VAbstractApplication::CreateLogDir() -> bool
         return logDir.mkpath(QChar('.')); // Create directory for log if need
     }
     return true;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------
+void VAbstractApplication::LogScreenInfo()
+{
+    // Diagnostic logging for DPI/multi-monitor crash investigation. Crashes have been observed during
+    // screen/display reconfiguration (e.g. macOS wake-from-sleep, plugging/unplugging a monitor, or changing
+    // display scaling). The crash stack trace lands inside the platform style painting with no application
+    // frames, so the log is the only signal. During the failing transition a transient QScreen with an empty
+    // name() briefly appears, so logging only name() is useless. Dump the full screen identity and follow every
+    // add/remove/primary-change plus per-screen DPI and geometry change, to capture the exact sequence leading
+    // to the crash.
+    qDebug() << "=== Screen Information ===";
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    qDebug() << "Screens:" << screens.size();
+    for (const auto *screen : screens)
+    {
+        qDebug() << "  -" << DumpScreen(screen);
+        ConnectScreenSignals(screen);
+    }
+
+    // Monitor for screen configuration changes during runtime
+    QObject::connect(qApp,
+                     &QGuiApplication::screenAdded,
+                     [](const QScreen *screen) -> void
+                     {
+                         qDebug() << "Screen added:" << DumpScreen(screen)
+                                  << "(total:" << QGuiApplication::screens().size() << ")";
+                         ConnectScreenSignals(screen);
+                     });
+
+    QObject::connect(qApp,
+                     &QGuiApplication::screenRemoved,
+                     [](const QScreen *screen) -> void
+                     {
+                         qDebug() << "Screen removed:" << DumpScreen(screen)
+                                  << "(remaining:" << QGuiApplication::screens().size() << ")";
+                     });
+
+    QObject::connect(qApp,
+                     &QGuiApplication::primaryScreenChanged,
+                     [](const QScreen *screen) -> void
+                     { qDebug() << "Primary screen changed to:" << DumpScreen(screen); });
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -676,6 +785,7 @@ void VAbstractApplication::ClearOldLogs()
     QDir::setCurrent(logDirPath);
 
     // Restore working directory
+    // NOLINTNEXTLINE(modernize-use-trailing-return-type)
     auto restore = qScopeGuard([workingDirectory] { QDir::setCurrent(workingDirectory); });
 
     QDirIterator it(logsDir.absolutePath(), QDir::Files | QDir::NoDotAndDotDot, QDirIterator::NoIteratorFlags);
@@ -692,13 +802,13 @@ void VAbstractApplication::ClearOldLogs()
     }
 
     qDebug("Clearing old logs");
-    for (const auto &fn : allFiles)
+    for (const auto &fn : std::as_const(allFiles))
     {
         QFileInfo const info(fn);
         const QDateTime created = info.birthTime();
         if (created.daysTo(QDateTime::currentDateTime()) >= DAYS_TO_KEEP_LOGS)
         {
-            VLockGuard<QFile> const tmp(info.absoluteFilePath(), [&fn]() { return new QFile(fn); });
+            VLockGuard<QFile> const tmp(info.absoluteFilePath(), [&fn]() -> QFile * { return new QFile(fn); });
             if (tmp.GetProtected() != nullptr)
             {
                 if (tmp.GetProtected()->remove())

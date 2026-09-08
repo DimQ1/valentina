@@ -29,8 +29,6 @@
 #ifndef DIALOGFLIPPINGBYAXIS_H
 #define DIALOGFLIPPINGBYAXIS_H
 
-#include "dialogtool.h"
-
 #include <QList>
 #include <QMetaObject>
 #include <QObject>
@@ -38,15 +36,14 @@
 #include <QVector>
 #include <QtGlobal>
 
-#include "../../tools/toolsdef.h"
-#include "../vmisc/def.h"
+#include "dialogoperationtool.h"
 
 namespace Ui
 {
 class DialogFlippingByAxis;
 }
 
-class DialogFlippingByAxis final : public DialogTool
+class DialogFlippingByAxis final : public DialogOperationTool
 {
     Q_OBJECT // NOLINT
 
@@ -61,38 +58,10 @@ public:
     auto GetAxisType() const -> AxisType;
     void SetAxisType(AxisType type);
 
-    auto GetVisibilityGroupName() const -> QString;
-    void SetVisibilityGroupName(const QString &name);
-
-    auto HasLinkedVisibilityGroup() const -> bool;
-    void SetHasLinkedVisibilityGroup(bool linked);
-
-    void SetVisibilityGroupTags(const QStringList &tags);
-    auto GetVisibilityGroupTags() const -> QStringList;
-
-    void SetNotes(const QString &notes);
-    auto GetNotes() const -> QString;
-
-    void SetGroupCategories(const QStringList &categories) override;
-
     void ShowDialog(bool click) override;
-
-    auto GetSourceObjects() const -> QVector<SourceItem>;
-    void SetSourceObjects(const QVector<SourceItem> &value);
-
-    void CheckDependencyTreeComplete() override;
 
 public slots:
     void ChosenObject(quint32 id, const SceneObject &type) override;
-    void SelectedObject(bool selected, quint32 object, quint32 tool) override;
-
-private slots:
-    void GroupNameChanged();
-    void ShowSourceDetails(int row);
-    void NameChanged(const QString &text);
-    void PenStyleChanged();
-    void ColorChanged();
-    void BulkRename();
 
 protected:
     void ShowVisualization() override;
@@ -100,6 +69,10 @@ protected:
     /** @brief SaveData Put dialog data in local variables */
     void SaveData() override;
     auto IsValid() const -> bool override;
+
+    void OnSourceObjectsSet() override;
+
+    auto Widgets() const -> OperationWidgets override;
 
 private slots:
     void PointChanged();
@@ -109,23 +82,7 @@ private:
 
     Ui::DialogFlippingByAxis *ui;
 
-    QVector<SourceItem> m_sourceObjects{};
-
-    bool stage1{true};
-
-    bool flagName{true};
-    bool flagGroupName{true};
-    bool flagError{false};
-
-    QStringList m_groupTags{};
-
-    bool m_dependencyReady{true};
-
     static void FillComboBoxAxisType(QComboBox *box);
-
-    void FillSourceList();
-
-    auto SaveSourceObjects() const -> QVector<SourceItem>;
 };
 
 #endif // DIALOGFLIPPINGBYAXIS_H

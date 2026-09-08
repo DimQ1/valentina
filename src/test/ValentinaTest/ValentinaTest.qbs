@@ -79,7 +79,11 @@ VTestApp {
     files: [
         "qttestmainlambda.cpp",
         "tst_dxf.cpp",
+        "tst_fancytabbar.cpp",
+        "tst_fancytabbar.h",
         "tst_dxf.h",
+        "tst_formulacache.cpp",
+        "tst_formulacache.h",
         "tst_svgfontwritingsystem.cpp",
         "tst_svgfontwritingsystem.h",
         "tst_vboundary.cpp",
@@ -88,10 +92,17 @@ VTestApp {
         "tst_vspline.cpp",
         "tst_nameregexp.cpp",
         "tst_vlayoutdetail.cpp",
+        "tst_vfoldline.cpp",
         "tst_varc.cpp",
         "tst_qmutokenparser.cpp",
         "tst_vmeasurements.cpp",
+        "tst_vdomdocument.cpp",
+        "tst_vdomdocument.h",
+        "tst_vasyncfileio.cpp",
+        "tst_vasyncfileio.h",
         "tst_vlockguard.cpp",
+        "tst_vcommonsettings.cpp",
+        "tst_vcommonsettings.h",
         "tst_misc.cpp",
         "tst_vcommandline.cpp",
         "tst_vpiece.cpp",
@@ -103,17 +114,30 @@ VTestApp {
         "tst_vsplinepath.cpp",
         "tst_vpointf.cpp",
         "tst_readval.cpp",
+        "tst_renametoken.cpp",
+        "tst_renametoken.h",
         "tst_vsvgpathtokenizer.cpp",
         "tst_vsvgpathtokenizer.h",
         "tst_vtheme.cpp",
         "tst_vtheme.h",
+        "tst_vmaingraphicsscene.cpp",
+        "tst_vmaingraphicsscene.h",
         "tst_vtranslatevars.cpp",
         "tst_vabstractpiece.cpp",
+        "tst_vpatterngraph.cpp",
+        "tst_vpatterngraph.h",
+        "tst_vabstractpattern.cpp",
+        "tst_vabstractpattern.h",
+        "tst_vcontainer.cpp",
+        "tst_vcontainer.h",
+        "tst_toolsdef.cpp",
+        "tst_toolsdef.h",
         "tst_vtooluniondetails.cpp",
         "tst_vposter.h",
         "tst_vspline.h",
         "tst_nameregexp.h",
         "tst_vlayoutdetail.h",
+        "tst_vfoldline.h",
         "tst_varc.h",
         "tst_qmutokenparser.h",
         "tst_vmeasurements.h",
@@ -134,6 +158,8 @@ VTestApp {
         "tst_vtooluniondetails.h",
         "tst_xsdschema.cpp",
         "tst_xsdschema.h",
+        "tst_vlabelarrangeengine.cpp",
+        "tst_vlabelarrangeengine.h",
     ]
 
     Group {
@@ -178,5 +204,14 @@ VTestApp {
         prefix: "codecs/"
         files: ["*.txt"]
         fileTags: []
+    }
+
+    Group {
+        name: "VTextCodec tests"
+        condition: Utilities.versionCompare(Qt.core.version, "6") >= 0 && !project.withTextCodec
+        files: [
+            "tst_vtextcodec.cpp",
+            "tst_vtextcodec.h",
+        ]
     }
 }

@@ -41,11 +41,15 @@
 #include <QVector>
 #include <QtGlobal>
 
+#include <atomic>
+
 #include "../vmisc/def.h"
 #include "vdomdocument.h"
 #include "vtoolrecord.h"
 
 class QDomElement;
+template<typename T>
+class QFutureWatcher;
 class VPiecePath;
 class VPieceNode;
 class VPatternImage;
@@ -147,7 +151,7 @@ public:
 
     virtual void UpdateToolData(const quint32 &id, VContainer *data) = 0;
 
-    virtual void Clear();
+    void Clear() override;
 
     static auto getTool(quint32 id) -> VDataTool *;
     static void AddTool(quint32 id, VDataTool *tool);
@@ -241,7 +245,10 @@ public:
 
     void ParseGroups(const QDomElement &domElement);
     auto CreateGroups(const QString &patternPieceName = QString()) -> QDomElement;
-    auto CreateGroup(quint32 id, const QString &name, const QStringList &tags, const QMap<quint32, quint32> &groupData,
+    auto CreateGroup(quint32 id,
+                     const QString &name,
+                     const QStringList &tags,
+                     const QMap<quint32, quint32> &groupData,
                      vidtype tool = null_id) -> QDomElement;
     auto GroupLinkedToTool(vidtype toolId) const -> vidtype;
 
@@ -494,6 +501,8 @@ protected:
 
     auto GroupHasItem(const QDomElement &groupDomElement, quint32 toolId, quint32 objectId) -> bool;
 
+    auto SaveSchema() const -> QString override;
+
     auto ReadUnits() const -> Unit;
     auto ReadPatternNumber() const -> QString;
     auto ReadLabelDateFormat() const -> QString;
@@ -514,6 +523,10 @@ private:
 
     QList<QFutureWatcher<void> *> m_formulaDependenciesWatchers{};
     mutable QMutex m_watchersMutex{};
+    std::atomic<quint64> m_dependencyCheckGeneration{0};
+
+    void ProcessFormulaDependencies(const QString &formula, quint32 id,
+                                     const QHash<QString, QList<quint32>> &variables, quint64 generation);
 
     auto ListIncrements() const -> QStringList;
     auto ListPointExpressions() const -> QVector<VFormulaField>;

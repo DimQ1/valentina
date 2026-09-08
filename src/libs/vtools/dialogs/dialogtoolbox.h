@@ -28,10 +28,13 @@
 #ifndef DIALOGTOOLBOX_H
 #define DIALOGTOOLBOX_H
 
+#include <chrono>
+#include <QComboBox>
 #include <QSharedPointer>
 #include <QString>
 #include <QtGlobal>
-#include <chrono>
+
+#include <immer/map.hpp>
 
 #include "../ifc/ifcdef.h"
 #include "../vgeometry/vgeometrydef.h"
@@ -51,6 +54,7 @@ class VContainer;
 class QListWidget;
 class VPieceNode;
 class QDialogButtonBox;
+class VAbstractPattern;
 namespace VPE
 {
 class QtColorPicker;
@@ -66,7 +70,7 @@ QT_WARNING_DISABLE_GCC("-Weffc++")
 struct FormulaData
 {
     QString formula;
-    const QHash<QString, QSharedPointer<VInternalVariable>> *variables{nullptr};
+    const immer::map<QString, QSharedPointer<VInternalVariable>> *variables{nullptr};
     QLabel *labelEditFormula{nullptr};
     QLabel *labelResult{nullptr};
     QString postfix{};
@@ -122,5 +126,22 @@ auto GenerateDefSubCurveName(const VContainer *data,
                              const QString &pointName = QString()) -> QString;
 auto GenerateDefOffsetCurveName(const VContainer *data, quint32 curveId, const QString &derBase, const QString &base)
     -> QString;
+void FillComboBoxObjectTypes(QComboBox *box);
+auto IsSafeToRemoveGroupObject(quint32 targetId, const VAbstractPattern *doc) -> bool;
+void MakeFilterableComboBox(QComboBox *combo, Qt::CaseSensitivity cs = Qt::CaseInsensitive);
+
+//---------------------------------------------------------------------------------------------------------------------
+template<typename T>
+inline void FillList(QComboBox *box, const QMap<QString, T> &list)
+{
+    SCASSERT(box != nullptr)
+    box->clear();
+    QMapIterator iter(list);
+    while (iter.hasNext())
+    {
+        iter.next();
+        box->addItem(iter.key(), QVariant::fromValue(iter.value()));
+    }
+}
 
 #endif // DIALOGTOOLBOX_H

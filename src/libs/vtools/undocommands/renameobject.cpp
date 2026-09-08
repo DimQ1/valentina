@@ -26,11 +26,11 @@
  **
  *************************************************************************/
 #include "renameobject.h"
+#include "renametoken.h"
 #include "../ifc/xml/vpatterngraph.h"
 #include "../qmuparser/qmutokenparser.h"
 
 #include <utility>
-#include <QRegularExpression>
 
 namespace
 {
@@ -51,326 +51,6 @@ auto FormulaTokens(const QString &formula) -> QMap<vsizetype, QString>
                  << "--------------------------------------";
     }
     return {};
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto ReplaceTokenLabel(const QString &token, const QString &oldLabel, const QString &newLabel) -> QString
-{
-    // Check if all variable types handled when we have new tool
-    Q_STATIC_ASSERT(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64);
-
-    // Token patterns with possible duplicate suffix or ID at the end
-    const QStringList twoLabelPrefixes = {"Line",
-                                          "AngleLine",
-                                          "Angle1Spl",
-                                          "Angle2Spl",
-                                          "Angle1SplPath",
-                                          "Angle2SplPath",
-                                          "C1LengthSpl",
-                                          "C2LengthSpl",
-                                          "C1LengthSplPath",
-                                          "C2LengthSplPath",
-                                          "Spl",
-                                          "SplPath"};
-
-    const QStringList oneLabelPrefixes = {"RadiusArc",
-                                          "Angle1Arc",
-                                          "Angle2Arc",
-                                          "Angle1ElArc",
-                                          "Angle2ElArc",
-                                          "Arc",
-                                          "ElArc",
-                                          "Radius1ElArc",
-                                          "Radius2ElArc"};
-
-    // Escape special regex characters in labels
-    const QString escapedOldLabel = QRegularExpression::escape(oldLabel);
-
-    // Check two-label patterns
-    for (const auto &prefix : twoLabelPrefixes)
-    {
-        const QString escapedPrefix = QRegularExpression::escape(prefix);
-
-        // Pattern with optional duplicate suffix: prefix_label1_label2 or prefix_label1_label2_<number>
-        // Match label1 position: prefix_oldLabel_<anything> or prefix_oldLabel_<anything>_<number>
-        const QRegularExpression regex1(
-            QStringLiteral("^(%1)_(%2)_(.+?)(?:_(\\d+))?$").arg(escapedPrefix, escapedOldLabel));
-        if (const QRegularExpressionMatch match = regex1.match(token); match.hasMatch())
-        {
-            const QString label2 = match.captured(3);
-            const QString suffix = match.captured(4); // May be empty
-
-            if (suffix.isEmpty())
-            {
-                return QStringLiteral("%1_%2_%3").arg(match.captured(1), newLabel, label2);
-            }
-
-            return QStringLiteral("%1_%2_%3_%4").arg(match.captured(1), newLabel, label2, suffix);
-        }
-
-        // Match label2 position: prefix_<anything>_oldLabel or prefix_<anything>_oldLabel_<number>
-        // This is tricky because we need to check if oldLabel ends the token or is followed by _<number>
-
-        // First try: prefix_<something>_oldLabel_<number>
-        const QRegularExpression regex2a(QStringLiteral("^(%1)_(.+?)_(%2)_(\\d+)$").arg(escapedPrefix, escapedOldLabel));
-        if (const QRegularExpressionMatch match = regex2a.match(token); match.hasMatch())
-        {
-            return QStringLiteral("%1_%2_%3_%4").arg(match.captured(1), match.captured(2), newLabel, match.captured(4));
-        }
-
-        // Second try: prefix_<something>_oldLabel (no suffix)
-        const QRegularExpression regex2b(QStringLiteral("^(%1)_(.+?)_(%2)$").arg(escapedPrefix, escapedOldLabel));
-        if (const QRegularExpressionMatch match = regex2b.match(token); match.hasMatch())
-        {
-            return QStringLiteral("%1_%2_%3").arg(match.captured(1), match.captured(2), newLabel);
-        }
-    }
-
-    // Check one-label patterns (with ID or ID_duplicate)
-    for (const auto &prefix : oneLabelPrefixes)
-    {
-        const QString escapedPrefix = QRegularExpression::escape(prefix);
-
-        // Pattern: prefix_label_<id> or prefix_label_<id>_<duplicate>
-        // Match: prefix_oldLabel_<number> or prefix_oldLabel_<number>_<number>
-        const QRegularExpression regex1(
-            QStringLiteral("^(%1)_(%2)_(\\d+)(?:_(\\d+))?$").arg(escapedPrefix, escapedOldLabel));
-        if (const QRegularExpressionMatch match = regex1.match(token); match.hasMatch())
-        {
-            const QString id = match.captured(3);
-            const QString duplicate = match.captured(4); // May be empty
-
-            if (duplicate.isEmpty())
-            {
-                return QStringLiteral("%1_%2_%3").arg(match.captured(1), newLabel, id);
-            }
-            return QStringLiteral("%1_%2_%3_%4").arg(match.captured(1), newLabel, id, duplicate);
-        }
-    }
-
-    return token; // No replacement needed
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto ReplaceTokenPair(const QString &token,
-                      RenameObjectType type,
-                      const ObjectPair_t &oldPair,
-                      const ObjectPair_t &newPair,
-                      quint32 duplicate) -> QString
-{
-    // Check if all variable types handled when we have new tool
-    Q_STATIC_ASSERT(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64);
-
-    QStringList prefixes;
-
-    if (type == RenameObjectType::Line)
-    {
-        prefixes = QStringList{"Line", "AngleLine"};
-    }
-    else if (type == RenameObjectType::Spline)
-    {
-        prefixes = QStringList{"Angle1Spl", "Angle2Spl", "C1LengthSpl", "C2LengthSpl", "Spl"};
-    }
-    else // RenameObjectType::SplinePath
-    {
-        prefixes = QStringList{"Angle1SplPath", "Angle2SplPath", "C1LengthSplPath", "C2LengthSplPath", "SplPath"};
-    }
-
-    for (const auto &prefix : std::as_const(prefixes))
-    {
-        QString expectedToken;
-
-        if (duplicate > 0)
-        {
-            // With specific duplicate number
-            expectedToken = QStringLiteral("%1_%2_%3_%4")
-                                .arg(prefix, oldPair.first, oldPair.second, QString::number(duplicate));
-        }
-        else
-        {
-            // Without duplicate number
-            expectedToken = QStringLiteral("%1_%2_%3").arg(prefix, oldPair.first, oldPair.second);
-        }
-
-        // Check for exact match with label1_label2 order
-        if (token == expectedToken)
-        {
-            if (duplicate > 0)
-            {
-                return QStringLiteral("%1_%2_%3_%4")
-                    .arg(prefix, newPair.first, newPair.second, QString::number(duplicate));
-            }
-            return QStringLiteral("%1_%2_%3").arg(prefix, newPair.first, newPair.second);
-        }
-    }
-
-    return token; // No replacement needed
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto CurveAliasPrefixes(CurveAliasType type) -> QStringList
-{
-    QStringList prefixes;
-
-    if (type == CurveAliasType::All)
-    {
-        prefixes = QStringList{"Angle1Spl",   "Angle2Spl",       "Angle1SplPath",   "Angle2SplPath", "C1LengthSpl",
-                               "C2LengthSpl", "C1LengthSplPath", "C2LengthSplPath", "Spl",           "SplPath",
-                               "RadiusArc",   "Angle1Arc",       "Angle2Arc",       "Angle1ElArc",   "Angle2ElArc",
-                               "Arc",         "ElArc",           "Radius1ElArc",    "Radius2ElArc",  "RotationElArc"};
-    }
-    else if (type == CurveAliasType::Arc)
-    {
-        prefixes = QStringList{"RadiusArc", "Angle1Arc", "Angle2Arc", "Arc"};
-    }
-    else if (type == CurveAliasType::ElArc)
-    {
-        prefixes = QStringList{"Angle1ElArc", "Angle2ElArc", "ElArc", "Radius1ElArc", "Radius2ElArc", "RotationElArc"};
-    }
-    else if (type == CurveAliasType::Spline)
-    {
-        prefixes = QStringList{"Angle1Spl", "Angle2Spl", "C1LengthSpl", "C2LengthSpl", "Spl"};
-    }
-    else if (type == CurveAliasType::SplinePath)
-    {
-        prefixes = QStringList{"Angle1SplPath", "Angle2SplPath", "C1LengthSplPath", "C2LengthSplPath", "SplPath"};
-    }
-
-    return prefixes;
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto ReplaceTokenAlias(const QString &token, CurveAliasType type, const QString &oldAlias, const QString &newAlias)
-    -> QString
-{
-    // Check if all variable types handled when we have new tool
-    Q_STATIC_ASSERT(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64);
-
-    QStringList const prefixes = CurveAliasPrefixes(type);
-
-    if (prefixes.isEmpty())
-    {
-        return token; // Unexpected type
-    }
-
-    for (const auto &prefix : std::as_const(prefixes))
-    {
-        if (token == QStringLiteral("%1_%2").arg(prefix, oldAlias))
-        {
-            return QStringLiteral("%1_%2").arg(prefix, newAlias);
-        }
-    }
-
-    return token; // No replacement needed
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto ReplaceTokenSegmentCurve(const QString &token,
-                              CurveAliasType type,
-                              const QString &pointName,
-                              const QString &leftSub,
-                              const QString &rightSub) -> QString
-{
-    // Check if all variable types handled when we have new tool
-    Q_STATIC_ASSERT(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64);
-
-    QStringList const prefixes = CurveAliasPrefixes(type);
-
-    if (prefixes.isEmpty() || pointName.isEmpty())
-    {
-        return token; // Unexpected type
-    }
-
-    static QString validName;
-    if (validName.isEmpty())
-    {
-        // Get valid name pattern and strip \A and \z anchors for embedding
-        validName = NameRegExp(VariableRegex::Variable);
-        validName.remove(QStringLiteral("\\A"));
-        validName.remove(QStringLiteral("\\z"));
-    }
-
-    const QString escapedPointName = QRegularExpression::escape(pointName);
-
-    for (const auto &prefix : std::as_const(prefixes))
-    {
-        const QString escapedPrefix = QRegularExpression::escape(prefix);
-
-        if (!leftSub.isEmpty())
-        {
-            // Match: prefix_pointName_<someLabel> -> prefix_pointName<leftSub>
-            const QRegularExpression regex(
-                QStringLiteral("^(%1)_(%2)_(%3)$").arg(escapedPrefix, escapedPointName, validName));
-            if (const QRegularExpressionMatch match = regex.match(token); match.hasMatch())
-            {
-                return QStringLiteral("%1_%2").arg(match.captured(1), leftSub);
-            }
-        }
-
-        if (!rightSub.isEmpty())
-        {
-            // Match: prefix_<someLabel>_pointName -> prefix_pointName<rightSub>
-            const QRegularExpression regex(
-                QStringLiteral("^(%1)_(%2)_(%3)$").arg(escapedPrefix, validName, escapedPointName));
-            if (const QRegularExpressionMatch match = regex.match(token); match.hasMatch())
-            {
-                return QStringLiteral("%1_%2").arg(match.captured(1), rightSub);
-            }
-        }
-    }
-
-    return token; // No replacement needed
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-auto ReplaceTokenArc(const QString &token,
-                     RenameArcType type,
-                     const QString &oldCenterLabel,
-                     const QString &newCenterLabel,
-                     quint32 id,
-                     int duplicate) -> QString
-{
-    // Check if all variable types handled when we have new tool
-    Q_STATIC_ASSERT(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64);
-
-    QStringList prefixes;
-
-    if (type == RenameArcType::Arc)
-    {
-        prefixes = QStringList{"Angle1Arc", "Angle2Arc", "RadiusArc", "Arc"};
-    }
-    else // RenameArcType::ElArc
-    {
-        prefixes = QStringList{"Angle1ElArc", "Angle2ElArc", "Radius1ElArc", "Radius2ElArc", "RotationElArc", "ElArc"};
-    }
-
-    for (const auto &prefix : std::as_const(prefixes))
-    {
-        QString expectedToken;
-
-        if (duplicate > 0)
-        {
-            // With specific duplicate number
-            expectedToken
-                = QStringLiteral("%1_%2_%3_%4").arg(prefix, oldCenterLabel).arg(id).arg(QString::number(duplicate));
-        }
-        else
-        {
-            // Without duplicate number
-            expectedToken = QStringLiteral("%1_%2_%3").arg(prefix, oldCenterLabel).arg(id);
-        }
-
-        // Check for exact match with label1_label2 order
-        if (token == expectedToken)
-        {
-            if (duplicate > 0)
-            {
-                return QStringLiteral("%1_%2_%3_%4").arg(prefix, newCenterLabel).arg(id).arg(QString::number(duplicate));
-            }
-            return QStringLiteral("%1_%2_%3").arg(prefix, newCenterLabel).arg(id);
-        }
-    }
-    return token; // No replacement needed
 }
 } // namespace
 
@@ -439,7 +119,14 @@ void AbstractObjectRename::RenameFormulas()
 
     if (m_operationType != OperationType::Undo)
     {
-        emit NeedLiteParsing(Document::LiteParse);
+        if (!m_fullParse)
+        {
+            emit NeedLiteParsing(Document::LiteParse);
+        }
+        else
+        {
+            emit NeedFullParsing();
+        }
     }
 }
 
@@ -788,7 +475,8 @@ auto RenameLabel::ProcessToken(const QString &token) const -> QString
 RenamePair::RenamePair(RenameObjectType type,
                        ObjectPair_t oldPair,
                        ObjectPair_t newPair,
-                       quint32 duplicate,
+                       quint32 oldDuplicate,
+                       quint32 newDuplicate,
                        VAbstractPattern *doc,
                        quint32 id,
                        QUndoCommand *parent)
@@ -796,7 +484,8 @@ RenamePair::RenamePair(RenameObjectType type,
     m_type(type),
     m_oldPair(std::move(oldPair)),
     m_newPair(std::move(newPair)),
-    m_duplicate(duplicate)
+    m_oldDuplicate(oldDuplicate),
+    m_newDuplicate(newDuplicate)
 {
 }
 
@@ -807,29 +496,31 @@ auto RenamePair::CreateForLine(const ObjectPair_t &oldPair,
                                quint32 id,
                                QUndoCommand *parent) -> RenamePair *
 {
-    return new RenamePair(RenameObjectType::Line, oldPair, newPair, 0, doc, id, parent);
+    return new RenamePair(RenameObjectType::Line, oldPair, newPair, 0, 0, doc, id, parent);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto RenamePair::CreateForSpline(const ObjectPair_t &oldPair,
                                  const ObjectPair_t &newPair,
-                                 quint32 duplicate,
+                                 quint32 oldDuplicate,
+                                 quint32 newDuplicate,
                                  VAbstractPattern *doc,
                                  quint32 id,
                                  QUndoCommand *parent) -> RenamePair *
 {
-    return new RenamePair(RenameObjectType::Spline, oldPair, newPair, duplicate, doc, id, parent);
+    return new RenamePair(RenameObjectType::Spline, oldPair, newPair, oldDuplicate, newDuplicate, doc, id, parent);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto RenamePair::CreateForSplinePath(const ObjectPair_t &oldPair,
                                      const ObjectPair_t &newPair,
-                                     quint32 duplicate,
+                                     quint32 oldDuplicate,
+                                     quint32 newDuplicate,
                                      VAbstractPattern *doc,
                                      quint32 id,
                                      QUndoCommand *parent) -> RenamePair *
 {
-    return new RenamePair(RenameObjectType::SplinePath, oldPair, newPair, duplicate, doc, id, parent);
+    return new RenamePair(RenameObjectType::SplinePath, oldPair, newPair, oldDuplicate, newDuplicate, doc, id, parent);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -842,10 +533,10 @@ auto RenamePair::ProcessToken(const QString &token) const -> QString
 
     if (ProcessType() == OperationType::Redo)
     {
-        return ReplaceTokenPair(token, m_type, m_oldPair, m_newPair, m_duplicate);
+        return ReplaceTokenPair(token, m_type, m_oldPair, m_newPair, m_oldDuplicate, m_newDuplicate);
     }
 
-    return ReplaceTokenPair(token, m_type, m_newPair, m_oldPair, m_duplicate);
+    return ReplaceTokenPair(token, m_type, m_newPair, m_oldPair, m_newDuplicate, m_oldDuplicate);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -901,7 +592,24 @@ auto RenameAlias::ProcessToken(const QString &token) const -> QString
 RenameArc::RenameArc(RenameArcType type,
                      QString oldCenterLabel,
                      QString newCenterLabel,
-                     int duplicate,
+                     VAbstractPattern *doc,
+                     quint32 id,
+                     QUndoCommand *parent)
+  : AbstractObjectRename(doc, id, parent),
+    m_type(type),
+    m_oldCenterLabel(std::move(oldCenterLabel)),
+    m_newCenterLabel(std::move(newCenterLabel))
+{
+    SCASSERT(!m_oldCenterLabel.isEmpty());
+    SCASSERT(!m_newCenterLabel.isEmpty());
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+RenameArc::RenameArc(RenameArcType type,
+                     QString oldCenterLabel,
+                     QString newCenterLabel,
+                     quint32 oldDuplicate,
+                     quint32 newDuplicate,
                      VAbstractPattern *doc,
                      quint32 id,
                      QUndoCommand *parent)
@@ -909,7 +617,8 @@ RenameArc::RenameArc(RenameArcType type,
     m_type(type),
     m_oldCenterLabel(std::move(oldCenterLabel)),
     m_newCenterLabel(std::move(newCenterLabel)),
-    m_duplicate(duplicate)
+    m_oldDuplicate(oldDuplicate),
+    m_newDuplicate(newDuplicate)
 {
     SCASSERT(!m_oldCenterLabel.isEmpty());
     SCASSERT(!m_newCenterLabel.isEmpty());
@@ -925,10 +634,22 @@ auto RenameArc::ProcessToken(const QString &token) const -> QString
 
     if (ProcessType() == OperationType::Redo)
     {
-        return ReplaceTokenArc(token, m_type, m_oldCenterLabel, m_newCenterLabel, ElementId(), m_duplicate);
+        return ReplaceTokenArc(token,
+                               m_type,
+                               m_oldCenterLabel,
+                               m_newCenterLabel,
+                               ElementId(),
+                               m_oldDuplicate,
+                               m_newDuplicate);
     }
 
-    return ReplaceTokenArc(token, m_type, m_newCenterLabel, m_oldCenterLabel, ElementId(), m_duplicate);
+    return ReplaceTokenArc(token,
+                           m_type,
+                           m_newCenterLabel,
+                           m_oldCenterLabel,
+                           ElementId(),
+                           m_oldDuplicate,
+                           m_newDuplicate);
 }
 
 //---------------------------------------------------------------------------------------------------------------------

@@ -36,16 +36,14 @@
 #include <QVector>
 #include <QtGlobal>
 
-#include "../../tools/toolsdef.h"
-#include "../vmisc/def.h"
-#include "dialogtool.h"
+#include "dialogoperationtool.h"
 
 namespace Ui
 {
 class DialogRotation;
 }
 
-class DialogRotation final : public DialogTool
+class DialogRotation final : public DialogOperationTool
 {
     Q_OBJECT // NOLINT
 
@@ -59,42 +57,16 @@ public:
     auto GetAngle() const -> QString;
     void SetAngle(const QString &value);
 
-    auto GetVisibilityGroupName() const -> QString;
-    void SetVisibilityGroupName(const QString &name);
-
-    auto HasLinkedVisibilityGroup() const -> bool;
-    void SetHasLinkedVisibilityGroup(bool linked);
-
-    void SetVisibilityGroupTags(const QStringList &tags);
-    auto GetVisibilityGroupTags() const -> QStringList;
-
-    void SetNotes(const QString &notes);
-    auto GetNotes() const -> QString;
-
-    void SetGroupCategories(const QStringList &categories) override;
-
     void ShowDialog(bool click) override;
-
-    auto GetSourceObjects() const -> QVector<SourceItem>;
-    void SetSourceObjects(const QVector<SourceItem> &value);
-
-    void CheckDependencyTreeComplete() override;
 
 public slots:
     void ChosenObject(quint32 id, const SceneObject &type) override;
-    void SelectedObject(bool selected, quint32 object, quint32 tool) override;
 
 private slots:
     /** @brief DeployAngleTextEdit grow or shrink formula input */
     void DeployAngleTextEdit();
     void FXAngle();
-    void GroupNameChanged();
     void EvalAngle();
-    void ShowSourceDetails(int row);
-    void NameChanged(const QString &text);
-    void PenStyleChanged();
-    void ColorChanged();
-    void BulkRename();
 
 protected:
     void ShowVisualization() override;
@@ -104,6 +76,10 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     void changeEvent(QEvent *event) override;
     auto IsValid() const -> bool override;
+
+    void OnSourceObjectsSet() override;
+
+    auto Widgets() const -> OperationWidgets override;
 
 private slots:
     void PointChanged();
@@ -121,27 +97,12 @@ private:
     /** @brief formulaBaseHeightAngle base height defined by dialogui */
     int formulaBaseHeightAngle{0};
 
-    QVector<SourceItem> m_sourceObjects{};
-
-    bool stage1{true};
-
     bool m_firstRelease{false};
 
     /** @brief flagAngle true if value of angle is correct */
     bool flagAngle{false};
-    bool flagName{true};
-    bool flagGroupName{true};
-    bool flagError{false};
-
-    QStringList m_groupTags{};
-
-    bool m_dependencyReady{true};
-
-    void FillSourceList();
 
     void InitIcons();
-
-    auto SaveSourceObjects() const -> QVector<SourceItem>;
 };
 
 #endif // DIALOGROTATION_H

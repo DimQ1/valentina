@@ -27,13 +27,16 @@
  *************************************************************************/
 #include "vwidgetdependencies.h"
 #include "dialogmovesteps.h"
+
 #include "ui_vwidgetdependencies.h"
 
 #include "../core/vdependencytreemodel.h"
 #include "../ifc/xml/vabstractpattern.h"
 #include "../ifc/xml/vpatternblockmapper.h"
 #include "../ifc/xml/vpatterngraph.h"
+#include "../vmisc/vvalentinasettings.h"
 #include "../vtools/tools/vabstracttool.h"
+#include "../vtools/tools/vinteractivetool.h"
 #include "../vtools/undocommands/movetool.h"
 #include "../vwidgets/vcontrolpointspline.h"
 #include "../vwidgets/vgraphicssimpletextitem.h"
@@ -116,10 +119,17 @@ VWidgetDependencies::VWidgetDependencies(VAbstractPattern *doc, QWidget *parent)
     ui->toolButtonDown->setIcon(FromTheme(VThemeIcon::ObjectOrderLower));
     ui->toolButtonBottom->setIcon(FromTheme(VThemeIcon::ObjectOrderBack));
 
+    ui->toolButtonAutoGoToObject->setChecked(VAbstractValApplication::VApp()->ValentinaSettings()->IsAutoGoToObject());
+
     connect(ui->toolButtonTop, &QToolButton::clicked, this, &VWidgetDependencies::MoveTop);
     connect(ui->toolButtonUp, &QToolButton::clicked, this, &VWidgetDependencies::MoveUp);
     connect(ui->toolButtonDown, &QToolButton::clicked, this, &VWidgetDependencies::MoveDown);
     connect(ui->toolButtonBottom, &QToolButton::clicked, this, &VWidgetDependencies::MoveBottom);
+    connect(ui->toolButtonAutoGoToObject,
+            &QToolButton::clicked,
+            this,
+            [](bool checked) -> void
+            { VAbstractValApplication::VApp()->ValentinaSettings()->SetAutoGoToObject(checked); });
 
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
     m_stateManager = new VTreeStateManager(ui->treeView, m_dependencyModel, this);
@@ -128,6 +138,7 @@ VWidgetDependencies::VWidgetDependencies(VAbstractPattern *doc, QWidget *parent)
             &QLineEdit::textChanged,
             this,
             [this](const QString &text) -> void { m_proxyModel->setFilterFixedString(text); });
+    connect(ui->treeView, &QAbstractItemView::clicked, this, &VWidgetDependencies::OnNodeClicked);
     connect(ui->treeView->selectionModel(),
             &QItemSelectionModel::currentChanged,
             this,
@@ -141,6 +152,23 @@ VWidgetDependencies::VWidgetDependencies(VAbstractPattern *doc, QWidget *parent)
 VWidgetDependencies::~VWidgetDependencies()
 {
     delete ui;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::Clear()
+{
+    if (m_doc == nullptr)
+    {
+        return;
+    }
+
+    m_historyManager.RebuildIndex();
+
+    m_indexPatternBlock = -1;
+
+    m_dependencyModel->ClearModel();
+
+    EnableMoveButtons(ui->treeView->currentIndex());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -171,9 +199,27 @@ void VWidgetDependencies::UpdateDependencies()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VWidgetDependencies::ShowDependency(QGraphicsItem *item)
+auto VWidgetDependencies::ItemToId(QGraphicsItem *item) -> vidtype
 {
     if (item == nullptr || !item->isEnabled())
+    {
+        return NULL_ID;
+    }
+
+    auto *toolItem = FindItemTool_r(item);
+    const auto *tool = dynamic_cast<VAbstractTool *>(toolItem);
+    if (tool == nullptr)
+    {
+        return NULL_ID;
+    }
+
+    return tool->getId();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::ShowDependency(vidtype id)
+{
+    if (id == NULL_ID)
     {
         if (m_activeTool != NULL_ID)
         {
@@ -183,18 +229,8 @@ void VWidgetDependencies::ShowDependency(QGraphicsItem *item)
         return;
     }
 
-    auto *toolItem = FindItemTool_r(item);
-
-    const auto *tool = dynamic_cast<VAbstractTool *>(toolItem);
-    if (tool == nullptr)
-    {
-        return;
-    }
-
-    vidtype const objectId = tool->getId();
-
     // Find in source model
-    const QModelIndex sourceIndex = m_dependencyModel->FindRootIndexByObjectId(objectId);
+    const QModelIndex sourceIndex = m_dependencyModel->FindRootIndexByObjectId(id);
 
     if (!sourceIndex.isValid())
     {
@@ -210,10 +246,13 @@ void VWidgetDependencies::ShowDependency(QGraphicsItem *item)
         return;
     }
 
-    // Select and scroll to the item
+    // Block signals so OnNodeSelectionChanged does not fire and trigger GoToObject/auto-scroll
+    // while the user is still interacting with the scene. The view does not self-repaint when
+    // currentChanged is blocked, so we force a viewport update manually.
     QSignalBlocker const blocker(ui->treeView->selectionModel());
     ui->treeView->setCurrentIndex(proxyIndex);
     ui->treeView->scrollTo(proxyIndex);
+    ui->treeView->viewport()->update();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -334,6 +373,35 @@ void VWidgetDependencies::GoToObject(vidtype id) const
         return;
     }
 
+    SCASSERT(m_doc != nullptr)
+
+    auto vertex = m_doc->PatternGraph()->GetVertex(id);
+    if (!vertex)
+    {
+        return;
+    }
+
+    if (vertex->type == VNodeType::OBJECT)
+    {
+        if (vertex->indexPatternBlock < 0)
+        {
+            return;
+        }
+
+        VContainer const patternData = m_doc->GetCompletePPData(
+            m_doc->PatternBlockMapper()->FindName(vertex->indexPatternBlock));
+
+        try
+        {
+            const QSharedPointer<VGObject> obj = patternData.GetGObject(vertex->id);
+            id = obj->getIdTool();
+        }
+        catch (const VExceptionBadId &)
+        {
+            return;
+        }
+    }
+
     VDataTool *tool = nullptr;
 
     try
@@ -345,29 +413,114 @@ void VWidgetDependencies::GoToObject(vidtype id) const
         return;
     }
 
-    if (auto *sceneItem = dynamic_cast<QGraphicsItem *>(tool))
+    auto *sceneItem = dynamic_cast<QGraphicsItem *>(tool);
+    if (sceneItem == nullptr)
     {
-        bool makeInvisible = false;
-        if (!sceneItem->isVisible())
-        {
-            sceneItem->setVisible(true);
-            makeInvisible = true;
-        }
-
-        const QRectF rect = ItemBoundingRect(sceneItem);
-
-        if (makeInvisible)
-        {
-            sceneItem->setVisible(false);
-        }
-
-        if (rect.isEmpty())
-        {
-            return;
-        }
-
-        emit ShowTool(rect);
+        return;
     }
+
+    const QRectF rect = ItemBoundingRect(sceneItem);
+    if (rect.isEmpty())
+    {
+        return;
+    }
+
+    // Ensure the view zooms out enough to show small items (e.g. single points) comfortably.
+    static constexpr qreal minViewSize = 1100.0; // px; Adjust if need
+    QRectF viewRect = rect;
+    if (const qreal shortSide = qMin(rect.width(), rect.height()); shortSide < minViewSize)
+    {
+        const qreal margin = (minViewSize - shortSide) / 2.0;
+        viewRect = rect.adjusted(-margin, -margin, margin, margin);
+    }
+
+    emit ShowTool(viewRect);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::SetToolCreationActive(bool active)
+{
+    m_toolCreationActive = active;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::DeleteTool(vidtype id) const
+{
+    if (id == NULL_ID || m_toolCreationActive)
+    {
+        return;
+    }
+
+    SCASSERT(m_doc != nullptr)
+
+    if (auto vertex = m_doc->PatternGraph()->GetVertex(id); vertex && vertex->type != VNodeType::TOOL)
+    {
+        return;
+    }
+
+    try
+    {
+        if (auto *tool = qobject_cast<VInteractiveTool *>(VAbstractPattern::getTool(id)))
+        {
+            tool->DeleteToolWithConfirm(true);
+        }
+    }
+    catch (const VExceptionBadId &)
+    {
+        return;
+    }
+    catch (const VExceptionToolWasDeleted &)
+    {
+        return; // Leave this method immediately!!!
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VWidgetDependencies::CanDeleteObject(vidtype id) const -> bool
+{
+    if (id == NULL_ID || m_toolCreationActive)
+    {
+        return false;
+    }
+
+    SCASSERT(m_doc != nullptr)
+
+    if (auto vertex = m_doc->PatternGraph()->GetVertex(id); vertex && vertex->type != VNodeType::TOOL)
+    {
+        return false;
+    }
+
+    try
+    {
+        if (const auto *tool = qobject_cast<VInteractiveTool *>(VAbstractPattern::getTool(id)))
+        {
+            return tool->IsRemovable() == RemoveStatus::Removable;
+        }
+    }
+    catch (const VExceptionBadId &)
+    {
+        return false;
+    }
+
+    return false;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VWidgetDependencies::CanGoToObject(vidtype id) const -> bool
+{
+    if (id == NULL_ID)
+    {
+        return false;
+    }
+
+    SCASSERT(m_doc != nullptr)
+
+    if (auto vertex = m_doc->PatternGraph()->GetVertex(id); vertex)
+    {
+        return vertex->type != VNodeType::PIECE && vertex->type != VNodeType::MODELING_TOOL;
+    }
+
+    return false;
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -404,6 +557,45 @@ void VWidgetDependencies::EnableMoveButtons(const QModelIndex &current)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::HighlightCurrentNode(const QModelIndex &current)
+{
+    if (m_doc == nullptr)
+    {
+        return;
+    }
+
+    const vidtype currentObjectId = ObjectId(current);
+    if (currentObjectId == NULL_ID)
+    {
+        return;
+    }
+
+    VPatternGraph const *graph = m_doc->PatternGraph();
+    auto currentVertex = graph->GetVertex(currentObjectId);
+    if (!currentVertex)
+    {
+        return;
+    }
+
+    switch (currentVertex->type)
+    {
+        case VNodeType::OBJECT:
+            m_activeTool = HighlightObject(currentVertex->id, currentVertex->indexPatternBlock, true);
+            break;
+        case VNodeType::TOOL:
+            m_activeTool = HighlightTool(currentVertex->id, true);
+            break;
+        default:
+            break;
+    }
+
+    if (ui->toolButtonAutoGoToObject->isChecked())
+    {
+        GoToObject(m_activeTool);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VWidgetDependencies::OnNodeSelectionChanged(const QModelIndex &current, const QModelIndex &previous)
 {
     if (m_doc == nullptr)
@@ -436,29 +628,24 @@ void VWidgetDependencies::OnNodeSelectionChanged(const QModelIndex &current, con
         }
     }
 
-    const vidtype currentObjectId = ObjectId(current);
-    if (currentObjectId == NULL_ID)
+    HighlightCurrentNode(current);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VWidgetDependencies::OnNodeClicked(const QModelIndex &index)
+{
+    Q_UNUSED(index)
+
+    if (m_activeTool != NULL_ID)
     {
-        // No selection
         return;
     }
 
-    auto currentVertex = graph->GetVertex(currentObjectId);
-    if (!currentVertex)
+    // Ignore the clicked index entirely — get it from selectionModel
+    // which is guaranteed proxy space, same as currentChanged
+    if (const QModelIndex current = ui->treeView->selectionModel()->currentIndex(); current.isValid())
     {
-        return;
-    }
-
-    switch (currentVertex->type)
-    {
-        case VNodeType::OBJECT:
-            m_activeTool = HighlightObject(currentVertex->id, currentVertex->indexPatternBlock, true);
-            break;
-        case VNodeType::TOOL:
-            m_activeTool = HighlightTool(currentVertex->id, true);
-            break;
-        default:
-            break;
+        HighlightCurrentNode(current);
     }
 }
 
@@ -489,14 +676,9 @@ void VWidgetDependencies::OnContextMenuRequested(const QPoint &pos)
     QAction const *actionCopyId = contextMenu.addAction(tr("Copy ID"));
     contextMenu.addSeparator();
     QAction *actionGoToObject = contextMenu.addAction(FromTheme(VThemeIcon::SystemSearch), tr("Go to Object"));
-
-    if (m_doc != nullptr)
-    {
-        if (auto vertex = m_doc->PatternGraph()->GetVertex(node->objectId); vertex)
-        {
-            actionGoToObject->setEnabled(vertex->type != VNodeType::PIECE);
-        }
-    }
+    actionGoToObject->setEnabled(CanGoToObject(node->objectId));
+    QAction *actionDeleteObject = contextMenu.addAction(FromTheme(VThemeIcon::EditDelete), tr("Delete"));
+    actionDeleteObject->setEnabled(CanDeleteObject(node->objectId));
 
     // Show menu and get selected action
     QAction const *selectedAction = contextMenu.exec(ui->treeView->viewport()->mapToGlobal(pos));
@@ -516,6 +698,10 @@ void VWidgetDependencies::OnContextMenuRequested(const QPoint &pos)
     else if (selectedAction == actionGoToObject)
     {
         GoToObject(node->objectId);
+    }
+    else if (selectedAction == actionDeleteObject)
+    {
+        DeleteTool(node->objectId);
     }
 }
 

@@ -55,6 +55,7 @@
 #include "../vmisc/def.h"
 #include "../vmisc/vabstractapplication.h"
 #include "../vmisc/vcommonsettings.h"
+#include "../vpatterndb/vcontainer.h"
 #include "../vtools/visualization/visualization.h" // Issue on Windows
 #include "../vwidgets/vmaingraphicsscene.h"
 
@@ -85,13 +86,14 @@ class DialogTool : public QDialog
     Q_OBJECT // NOLINT
 
 public:
-    DialogTool(const VContainer *data, VAbstractPattern *doc, quint32 toolId, QWidget *parent = nullptr);
+    DialogTool(const VContainer *patternData, VAbstractPattern *doc, quint32 toolId, QWidget *parent = nullptr);
     ~DialogTool() override;
 
     auto GetAssociatedTool() -> VAbstractTool *;
     void SetAssociatedTool(VAbstractTool *tool);
 
     virtual void ShowDialog(bool click);
+    auto VisualizationBroken() const -> bool;
     virtual void Build(const Tool &type);
     virtual void SetPiecesList(const QVector<quint32> &list);
     virtual void SetPatternDoc(VAbstractPattern *doc);
@@ -123,8 +125,10 @@ signals:
      */
     void ToolTip(const QString &toolTip);
 public slots:
+    void SceneObjectChosen(quint32 id, const SceneObject &type);
     virtual void ChosenObject(quint32 id, const SceneObject &type);
     virtual void SelectedObject(bool selected, quint32 object, quint32 tool);
+    virtual void ClearSourceObjects() {}
     virtual void DialogAccepted();
     /**
      * @brief DialogApply save data and emit signal DialogApplied.
@@ -135,7 +139,7 @@ public slots:
 
 protected:
     /** @brief data container with data */
-    const VContainer *data;
+    VContainer data;
 
     VAbstractPattern *m_doc;
 
@@ -172,6 +176,10 @@ protected:
                             quint32 ch2 = NULL_ID) const;
     void FillComboBoxArcs(QComboBox *box, FillComboBox rule = FillComboBox::Whole, quint32 ch1 = NULL_ID,
                           quint32 ch2 = NULL_ID) const;
+    void FillComboBoxEllipticalArcs(QComboBox *box,
+                                    FillComboBox rule = FillComboBox::Whole,
+                                    quint32 ch1 = NULL_ID,
+                                    quint32 ch2 = NULL_ID) const;
     void FillComboBoxArcCurves(QComboBox *box,
                                FillComboBox rule = FillComboBox::Whole,
                                quint32 ch1 = NULL_ID,
@@ -213,6 +221,28 @@ protected:
     template <typename T> auto GetListInternals(const QListWidget *list) const -> QVector<T>;
 
     virtual void ShowVisualization() {}
+
+    /**
+     * @brief RestoreTransientVariables re-inject dialog-local formula variables (e.g. "CurrentLength")
+     * that live only in this dialog's own container copy. SetAssociatedTool() replaces that copy
+     * wholesale from the associated tool's data, which never permanently holds such variables, so
+     * dialogs relying on them must restore them here to keep the "Edit length" variable list valid.
+     */
+    virtual void RestoreTransientVariables() {}
+
+    /**
+     * @brief ToolCommitted called right after the dialog created its tool and got linked to it. Dialogs that
+     * compare their contents against what is committed in the pattern must re-snapshot that baseline here,
+     * because until Apply is pressed the dialog is filled without going through the usual setters.
+     */
+    virtual void ToolCommitted() {}
+
+    /**
+     * @brief UsesVisualization whether this dialog drives a scene visualization (vis) during creation.
+     * Almost all tool dialogs do; the few that never create a vis (e.g. DialogGroup) override this to
+     * return false so VisualizationBroken() never reports them as broken just because vis is null.
+     */
+    virtual auto UsesVisualization() const -> bool { return true; }
     /**
      * @brief SaveData Put dialog data in local variables
      */
@@ -225,7 +255,6 @@ protected:
 
 private:
     Q_DISABLE_COPY_MOVE(DialogTool) // NOLINT
-    void FillList(QComboBox *box, const QMap<QString, quint32> &list) const;
 
     template <typename T> void PrepareList(QMap<QString, quint32> &list, quint32 id) const;
 

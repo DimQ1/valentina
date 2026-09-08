@@ -45,6 +45,7 @@
 #include "../vgeometry/vspline.h"
 #include "../vmisc/exception/vexception.h"
 #include "../vmisc/literals.h"
+#include "../vmisc/vabstractapplication.h"
 #include "variables/varcradius.h"
 #include "variables/vcurveangle.h"
 #include "variables/vcurveclength.h"
@@ -67,6 +68,7 @@ QT_WARNING_POP
 QMap<QString, quint32> VContainer::_id = QMap<QString, quint32>();
 QMap<QString, QSet<QString>> VContainer::uniqueNames = QMap<QString, QSet<QString>>();
 QMap<QString, quint32> VContainer::copyCounter = QMap<QString, quint32>();
+std::atomic_bool VContainer::frozen{false}; // NOLINT
 
 //---------------------------------------------------------------------------------------------------------------------
 /**
@@ -173,9 +175,9 @@ void VContainer::ClearNamespace(const QString &nspace)
 // cppcheck-suppress unusedFunction
 auto VContainer::GetGObject(quint32 id) const -> QSharedPointer<VGObject>
 {
-    if (d->calculationObjects.contains(id))
+    if (const auto *found = d->calculationObjects.find(id))
     {
-        return d->calculationObjects.value(id);
+        return *found;
     }
 
     if (d->modelingObjects->contains(id))
@@ -220,6 +222,12 @@ auto VContainer::GetPiecePath(quint32 id) const -> VPiecePath
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+auto VContainer::ContainsPiecePath(quint32 id) const -> bool
+{
+    return d->piecePaths->contains(id);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 auto VContainer::GetPieceForPiecePath(quint32 id) const -> quint32
 {
     auto i = d->pieces->constBegin();
@@ -243,17 +251,165 @@ void VContainer::RegisterUniqueName(VGObject *obj) const
     RegisterUniqueName(pointer);
 }
 
+namespace
+{
+//---------------------------------------------------------------------------------------------------------------------
+// Diagnostic helper for RegisterUniqueName(). Only walked when a collision was already detected, so a
+// linear scan is fine.
+//
+// excludeId must be the id of the object currently being registered: UpdateObject() inserts it into
+// `objects` before RegisterUniqueName() runs, so without excluding it a hash scan can non-deterministically
+// return the object itself instead of the other, genuinely colliding one -- QHash iteration order for
+// integer keys is randomized per process by Qt's hash-flooding protection, so which match comes first is
+// not stable across runs.
+//
+// Two overloads rather than one template: `calculationObjects` is an immer::map, whose iterators yield
+// std::pair<K, T>, while `modelingObjects` is still a QHash, whose iterators expose key()/value(). The two
+// iteration shapes are not source-compatible, and the only common form (QHash::keyValueBegin()) would need
+// a per-container adapter for no gain over the two three-line loops below. The match predicate itself is
+// shared so it cannot drift between them.
+auto ObjectNameMatches(quint32 id, const QSharedPointer<VGObject> &object, const QString &name, quint32 excludeId)
+    -> bool
+{
+    return id != excludeId && (object->name() == name || object->GetAlias() == name);
+}
+
+auto FindObjectByName(const immer::map<quint32, QSharedPointer<VGObject>> &objects,
+                      const QString &name,
+                      quint32 excludeId) -> QSharedPointer<VGObject>
+{
+    for (const auto &[objId, object] : objects)
+    {
+        if (ObjectNameMatches(objId, object, name, excludeId))
+        {
+            return object;
+        }
+    }
+    return {};
+}
+
+auto FindObjectByName(const QHash<quint32, QSharedPointer<VGObject>> &objects, const QString &name, quint32 excludeId)
+    -> QSharedPointer<VGObject>
+{
+    for (auto i = objects.constBegin(); i != objects.constEnd(); ++i)
+    {
+        if (ObjectNameMatches(i.key(), i.value(), name, excludeId))
+        {
+            return i.value();
+        }
+    }
+    return {};
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto FindObjectById(const immer::map<quint32, QSharedPointer<VGObject>> &calculationObjects,
+                    const QHash<quint32, QSharedPointer<VGObject>> &modelingObjects,
+                    quint32 id) -> QSharedPointer<VGObject>
+{
+    if (const auto *found = calculationObjects.find(id))
+    {
+        return *found;
+    }
+    return modelingObjects.value(id);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// Follow obj's idObject chain to whatever it ultimately mirrors. Usually one hop (a Draw::Modeling node
+// points straight at its Draw::Calculation source), but a generated node can mirror another Draw::Modeling
+// node instead of the original source -- e.g. VToolUnionDetails::AddNodePoint() re-points the exposed piece
+// node at an internal helper object it just created for the biased/rotated position, not at the source
+// point directly. Only follow the chain through Draw::Modeling objects: a Draw::Calculation object's own
+// idObject means something unrelated (see OwningToolId()), so it always ends the walk.
+// Bounded to tolerate a malformed/cyclic idObject chain in a corrupted file.
+auto ResolveMirrorRoot(const QSharedPointer<VGObject> &obj,
+                       const immer::map<quint32, QSharedPointer<VGObject>> &calculationObjects,
+                       const QHash<quint32, QSharedPointer<VGObject>> &modelingObjects) -> quint32
+{
+    QSharedPointer<VGObject> current = obj;
+    for (int guard = 0; guard < 32 && not current.isNull() && current->getMode() == Draw::Modeling
+                        && current->getIdObject() != NULL_ID;
+         ++guard)
+    {
+        current = FindObjectById(calculationObjects, modelingObjects, current->getIdObject());
+    }
+    return current.isNull() ? obj->id() : current->id();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// A Draw::Modeling object (piece node) is an intentional copy of its source Draw::Calculation object --
+// VNodePoint/VNodeSpline/VNodeArc/etc. Create() always duplicate the source and keep its name, linking back
+// via idObject, possibly through another Draw::Modeling object rather than the source directly (see
+// ResolveMirrorRoot() above). Sharing a name with that source is by design, not a duplicate-name bug.
+auto IsModelingMirror(const QSharedPointer<VGObject> &a,
+                      const QSharedPointer<VGObject> &b,
+                      const immer::map<quint32, QSharedPointer<VGObject>> &calculationObjects,
+                      const QHash<quint32, QSharedPointer<VGObject>> &modelingObjects) -> bool
+{
+    return ResolveMirrorRoot(a, calculationObjects, modelingObjects) == b->id()
+           || ResolveMirrorRoot(b, calculationObjects, modelingObjects) == a->id();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// A Draw::Calculation object created by an operation (Move/Rotate/Flip/...) does not carry its own name in
+// the pattern file -- the name lives on the <item> for the source object inside that operation's tool
+// element, whose id is stashed in idObject (see VToolMove's CreateItem()). Report that tool id instead of
+// the object's own id, which points at a nameless destination placeholder no one can act on.
+auto OwningToolId(const QSharedPointer<VGObject> &object) -> quint32
+{
+    if (object->getMode() == Draw::Calculation && object->getIdObject() != NULL_ID)
+    {
+        return object->getIdObject();
+    }
+    return object->id();
+}
+} // namespace
+
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::RegisterUniqueName(const QSharedPointer<VGObject> &obj) const
 {
+    CheckNotFrozen("RegisterUniqueName");
+
     SCASSERT(not obj.isNull())
 
-    uniqueNames[d->nspace].insert(obj->name());
+    RegisterUniqueName(obj, obj->name());
+    RegisterUniqueName(obj, obj->GetAlias());
+}
 
-    if (not obj->GetAlias().isEmpty())
+//---------------------------------------------------------------------------------------------------------------------
+void VContainer::RegisterUniqueName(const QSharedPointer<VGObject> &obj, const QString &name) const
+{
+    if (name.isEmpty())
     {
-        uniqueNames[d->nspace].insert(obj->GetAlias());
+        return;
     }
+
+    if (uniqueNames[d->nspace].contains(name))
+    {
+        QSharedPointer<VGObject> existing = FindObjectByName(d->calculationObjects, name, obj->id());
+        if (existing.isNull() && d->modelingObjects)
+        {
+            existing = FindObjectByName(*d->modelingObjects, name, obj->id());
+        }
+
+        // A Draw::Modeling object sharing a name with the Draw::Calculation object it mirrors is not
+        // a collision.
+        if (not existing.isNull() && not IsModelingMirror(existing, obj, d->calculationObjects, *d->modelingObjects))
+        {
+            const QString errorMsg
+                = tr("The pattern has two objects sharing the name '%1': one from the tool with id %2, "
+                     "another from the tool with id %3. Formulas or tools referencing this name may "
+                     "resolve to the wrong one.")
+                      .arg(name)
+                      .arg(OwningToolId(obj))
+                      .arg(OwningToolId(existing));
+
+            VAbstractApplication::VApp()->IsPedantic()
+                ? throw VException(errorMsg)
+                : qWarning() << VAbstractApplication::warningMessageSignature + errorMsg;
+        }
+    }
+
+    uniqueNames[d->nspace].insert(name);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -272,6 +428,8 @@ auto VContainer::AddGObject(VGObject *obj) -> quint32
 //---------------------------------------------------------------------------------------------------------------------
 auto VContainer::AddGObject(const QSharedPointer<VGObject> &obj) -> quint32
 {
+    CheckNotFrozen("AddGObject");
+
     SCASSERT(not obj.isNull())
 
     if (obj->getMode() == Draw::Layout)
@@ -280,14 +438,15 @@ auto VContainer::AddGObject(const QSharedPointer<VGObject> &obj) -> quint32
         return NULL_ID;
     }
 
-    RegisterUniqueName(obj);
-
     const quint32 id = getNextId();
     obj->setId(id);
 
+    // Assign the id first so a collision warning can report the real, final id of the new object.
+    RegisterUniqueName(obj);
+
     if (obj->getMode() == Draw::Calculation)
     {
-        d->calculationObjects.insert(id, obj);
+        d->calculationObjects = d->calculationObjects.set(id, obj);
     }
     else if (obj->getMode() == Draw::Modeling)
     {
@@ -340,6 +499,8 @@ auto VContainer::getNextId() const -> quint32
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::UpdateId(quint32 newId, const QString &nspace)
 {
+    CheckNotFrozen("UpdateId");
+
     if (_id.contains(nspace))
     {
         if (newId > _id.value(nspace))
@@ -382,15 +543,21 @@ void VContainer::Clear()
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::ClearForFullParse()
 {
-    qCDebug(vCon, "Clearing container data for full parse.");
+    qCDebug(vCon, "Clearing container data for full parse. Id counter was %u.", _id.value(d->nspace));
     _id[d->nspace] = NULL_ID;
 
     d->pieces->clear();
     d->piecePaths->clear();
     Q_STATIC_ASSERT_X(static_cast<int>(VarType::Unknown) == 12, "Check that you used all types");
-    ClearVariables(QVector<VarType>{VarType::Increment, VarType::IncrementSeparator, VarType::LineAngle,
-                                    VarType::LineLength, VarType::CurveLength, VarType::CurveCLength,
-                                    VarType::ArcRadius, VarType::CurveAngle, VarType::PieceExternalArea,
+    ClearVariables(QVector<VarType>{VarType::Increment,
+                                    VarType::IncrementSeparator,
+                                    VarType::LineAngle,
+                                    VarType::LineLength,
+                                    VarType::CurveLength,
+                                    VarType::CurveCLength,
+                                    VarType::ArcRadius,
+                                    VarType::CurveAngle,
+                                    VarType::PieceExternalArea,
                                     VarType::PieceSeamLineArea});
     ClearGObjects();
     ClearUniqueNames();
@@ -402,43 +569,55 @@ void VContainer::ClearForFullParse()
  */
 void VContainer::ClearGObjects()
 {
-    d->calculationObjects.clear();
+    CheckNotFrozen("ClearGObjects");
+
+    d->calculationObjects = {};
     d->modelingObjects->clear();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::ClearCalculationGObjects()
 {
-    d->calculationObjects.clear();
+    CheckNotFrozen("ClearCalculationGObjects");
+
+    d->calculationObjects = {};
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::ClearVariables(const VarType &type)
 {
+    CheckNotFrozen("ClearVariables");
+
     ClearVariables(QVector<VarType>({type}));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::ClearVariables(const QVector<VarType> &types)
 {
-    if (not d->variables.isEmpty()) //-V807
+    CheckNotFrozen("ClearVariables");
+
+    if (!d->variables.empty()) //-V807
     {
         if (types.isEmpty() || types.contains(VarType::Unknown))
         {
-            d->variables.clear();
+            d->variables = {};
         }
         else
         {
-            for (auto i = d->variables.begin(); i != d->variables.end();)
+            // Collect first, then erase: immer::map has no mutable iterators, and each erase() returns a
+            // new map that has to be rebound, which would invalidate any iterator held across the loop.
+            QVector<QString> doomed;
+            for (const auto &[name, var] : d->variables)
             {
-                if (types.contains(i.value()->GetType()))
+                if (types.contains(var->GetType()))
                 {
-                    i = d->variables.erase(i);
+                    doomed.append(name);
                 }
-                else
-                {
-                    ++i;
-                }
+            }
+
+            for (const auto &name : doomed)
+            {
+                d->variables = d->variables.erase(name);
             }
         }
     }
@@ -484,9 +663,9 @@ void VContainer::AddArc(const QSharedPointer<VAbstractCurve> &arc, const quint32
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::AddCurve(const QSharedPointer<VAbstractCurve> &curve, const quint32 &id, quint32 parentId)
 {
-    const GOType curveType = curve->getType();
-    if (curveType != GOType::Spline && curveType != GOType::SplinePath && curveType != GOType::CubicBezier &&
-        curveType != GOType::CubicBezierPath && curveType != GOType::Arc && curveType != GOType::EllipticalArc)
+    if (const GOType curveType = curve->getType();
+        curveType != GOType::Spline && curveType != GOType::SplinePath && curveType != GOType::CubicBezier
+        && curveType != GOType::CubicBezierPath && curveType != GOType::Arc && curveType != GOType::EllipticalArc)
     {
         throw VException(tr("Can't create a curve with type '%1'").arg(static_cast<int>(curveType)));
     }
@@ -505,7 +684,8 @@ void VContainer::AddSpline(const QSharedPointer<VAbstractBezier> &curve, quint32
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VContainer::AddCurveWithSegments(const QSharedPointer<VAbstractCubicBezierPath> &curve, const quint32 &id,
+void VContainer::AddCurveWithSegments(const QSharedPointer<VAbstractCubicBezierPath> &curve,
+                                      const quint32 &id,
                                       quint32 parentId)
 {
     AddSpline(curve, id, parentId);
@@ -525,7 +705,9 @@ void VContainer::AddCurveWithSegments(const QSharedPointer<VAbstractCubicBezierP
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::RemoveVariable(const QString &name)
 {
-    d->variables.remove(name);
+    CheckNotFrozen("RemoveVariable");
+
+    d->variables = d->variables.erase(name);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -557,14 +739,18 @@ void VContainer::UpdatePiecePath(quint32 id, const VPiecePath &path)
  */
 void VContainer::RemoveIncrement(const QString &name)
 {
-    d->variables[name].clear();
-    d->variables.remove(name);
+    CheckNotFrozen("RemoveIncrement");
+
+    // The old body also did `d->variables[name].clear();` first. That only nulled the QSharedPointer held
+    // by *this* copy of the hash -- every other snapshot keeps its own reference to the same pointee -- so
+    // it never had any cross-snapshot effect; it just released one ref, which erase() does anyway.
+    d->variables = d->variables.erase(name);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VContainer::FillPiecesAreas(Unit unit)
 {
-    QHash<quint32, VPiece>  const*pieces = d->pieces.data();
+    QHash<quint32, VPiece> const *pieces = d->pieces.data();
 
     auto i = pieces->constBegin();
     while (i != pieces->constEnd())
@@ -661,16 +847,17 @@ auto VContainer::DataDependencyVariables() const -> QHash<QString, QList<quint32
 {
     Q_STATIC_ASSERT_X(static_cast<int>(VarType::Unknown) == 12, "Check that you used all types");
     QVector<VarType> const types{VarType::LineAngle,
-                           VarType::LineLength,
-                           VarType::CurveLength,
-                           VarType::CurveCLength,
-                           VarType::ArcRadius,
-                           VarType::CurveAngle};
+                                 VarType::LineLength,
+                                 VarType::CurveLength,
+                                 VarType::CurveCLength,
+                                 VarType::ArcRadius,
+                                 VarType::CurveAngle};
 
     QHash<QString, QList<quint32>> varData;
 
-    for (const auto &var : d->variables)
+    for (const auto &[name, var] : d->variables)
     {
+        Q_UNUSED(name)
         if (types.contains(var->GetType()))
         {
             auto const references = var->GetReferences();
@@ -735,16 +922,17 @@ auto VContainer::GetTrVars() const -> const VTranslateVars *
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <typename T> auto VContainer::DataVar(const VarType &type) const -> QMap<QString, QSharedPointer<T>>
+template<typename T>
+auto VContainer::DataVar(const VarType &type) const -> QMap<QString, QSharedPointer<T>>
 {
     QMap<QString, QSharedPointer<T>> map;
-    // Sorting QHash by id
-    for (auto i = d->variables.constBegin(); i != d->variables.constEnd(); ++i)
+    // The returned QMap sorts by translated name; the source map's own iteration order is irrelevant.
+    for (const auto &[name, value] : d->variables)
     {
-        if (i.value()->GetType() == type)
+        if (value->GetType() == type)
         {
-            QSharedPointer<T> const var = GetVariable<T>(i.key());
-            map.insert(d->trVars->VarToUser(i.key()), var);
+            QSharedPointer<T> const var = GetVariable<T>(name);
+            map.insert(d->trVars->VarToUser(name), var);
         }
     }
     return map;
@@ -797,7 +985,7 @@ void VContainer::RemoveUniqueName(const QString &name) const
  * @brief data container with datagObjects return container of gObjects
  * @return pointer on container of gObjects
  */
-auto VContainer::CalculationGObjects() const -> const QHash<quint32, QSharedPointer<VGObject>> *
+auto VContainer::CalculationGObjects() const -> const immer::map<quint32, QSharedPointer<VGObject>> *
 {
     return &d->calculationObjects;
 }
@@ -809,7 +997,7 @@ auto VContainer::DataPieces() const -> QHash<quint32, VPiece> *
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VContainer::DataVariables() const -> const QHash<QString, QSharedPointer<VInternalVariable>> *
+auto VContainer::DataVariables() const -> const immer::map<QString, QSharedPointer<VInternalVariable>> *
 {
     return &d->variables;
 }

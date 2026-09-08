@@ -227,7 +227,7 @@ void VToolAlongLine::ApplyToolOptions(const QDomElement &oldDomElement, const QD
 
     if (oldLabel != newLabel)
     {
-        auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
+        const auto *renameLabel = new RenameLabel(oldLabel, newLabel, doc, m_id, newGroup);
         connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
     }
 
@@ -374,7 +374,7 @@ auto VToolAlongLine::Create(VToolAlongLineInitData &initData) -> VToolAlongLine 
         VAbstractTool::AddRecord(initData.id, Tool::AlongLine, initData.doc);
         point = new VToolAlongLine(initData);
         initData.scene->addItem(point);
-        InitToolConnections(initData.scene, point);
+        InitPointToolConnections(initData.scene, point);
         VAbstractPattern::AddTool(initData.id, point);
     }
     // Very important to delete it. Only this tool need this special variable.
@@ -386,4 +386,29 @@ auto VToolAlongLine::Create(VToolAlongLineInitData &initData) -> VToolAlongLine 
 auto VToolAlongLine::SecondPointName() const -> QString
 {
     return VAbstractTool::data.GetGObject(m_secondPointId)->name();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VToolAlongLine::GetFormulaLength() const -> VFormula
+{
+    // The property browser edits this formula outside a tool dialog, so the dialog's
+    // RestoreTransientVariables()/SetCurrentLength() never runs. Inject the same special
+    // "CurrentLength" variable here (see VToolAlongLine::Create()), recomputed fresh from the
+    // current point positions, into this tool's own persistent container -- VFormula only
+    // stores a pointer to it, and callers keep using that pointer after this call returns
+    // (see VToolCut::GetFormulaLength()).
+    auto *container = const_cast<VContainer *>(getData());
+    const QSharedPointer<VPointF> firstPoint = container->GeometricObject<VPointF>(basePointId);
+    const QSharedPointer<VPointF> secondPoint = container->GeometricObject<VPointF>(m_secondPointId);
+
+    auto *length = new VLengthLine(firstPoint.data(), basePointId, secondPoint.data(), m_secondPointId,
+                                   *container->GetPatternUnit());
+    length->SetName(currentLength);
+    container->AddVariable(length);
+
+    VFormula val(formulaLength, container);
+    val.setToolId(m_id);
+    val.setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits()));
+    val.Eval();
+    return val;
 }

@@ -28,6 +28,9 @@
 #include "vganalytics.h"
 #include "vganalyticsworker.h"
 
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <vcsRepoState.h>
 #include <QDataStream>
 #include <QDebug>
@@ -37,7 +40,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QLoggingCategory>
 #include <QNetworkAccessManager>
+#include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QQueue>
@@ -69,6 +74,22 @@ using namespace Qt::Literals::StringLiterals;
 
 namespace
 {
+// Resolved once by CheckCountryCodeAsync() at startup and reused for every event afterwards. Filling this field used
+// to mean a blocking HTTPS GET on the GUI thread each time an app-start event was built. Only ever touched from the
+// GUI thread.
+QString countryCodeCache = QStringLiteral("Unknown"); // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+//---------------------------------------------------------------------------------------------------------------------
+void CacheCountryCode(const QString &country)
+{
+    countryCodeCache = country;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto CachedCountryCode() -> QString
+{
+    return countryCodeCache;
+}
 
 //---------------------------------------------------------------------------------------------------------------------
 auto GetSystemMemorySize() -> qint64
@@ -94,10 +115,10 @@ auto GetSystemMemorySize() -> qint64
     host_statistics64(machPort, HOST_VM_INFO, reinterpret_cast<host_info64_t>(&vmStats), &count);
 
     auto freeMemory = static_cast<qulonglong>(vmStats.free_count) * static_cast<qulonglong>(pageSize);
-    qulonglong totalMemoryUsed =
-        (static_cast<qulonglong>(vmStats.active_count) + static_cast<qulonglong>(vmStats.inactive_count) +
-         static_cast<qulonglong>(vmStats.wire_count)) *
-        static_cast<qulonglong>(pageSize);
+    qulonglong totalMemoryUsed = (static_cast<qulonglong>(vmStats.active_count)
+                                  + static_cast<qulonglong>(vmStats.inactive_count)
+                                  + static_cast<qulonglong>(vmStats.wire_count))
+                                 * static_cast<qulonglong>(pageSize);
     return static_cast<qint64>(freeMemory + totalMemoryUsed);
 #elif defined(Q_OS_LINUX)
     struct sysinfo info; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
@@ -180,7 +201,10 @@ void VGAnalytics::SetLogLevel(enum VGAnalytics::LogLevel logLevel)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VGAnalytics::LogLevel() const -> enum VGAnalytics::LogLevel { return d->m_logLevel; }
+auto VGAnalytics::LogLevel() const -> enum VGAnalytics::LogLevel
+{
+    return d->m_logLevel;
+}
 
 //---------------------------------------------------------------------------------------------------------------------
 void VGAnalytics::SetRepoRevision(QString rev)
@@ -272,6 +296,9 @@ auto VGAnalytics::NetworkAccessManager() const -> QNetworkAccessManager *
 //---------------------------------------------------------------------------------------------------------------------
 void VGAnalytics::SendAppFreshInstallEvent(qint64 engagementTimeMsec)
 {
+    // first_visit is the reserved GA4 event that powers the "New users" metric. The Measurement
+    // Protocol does not generate it automatically, so send it here on fresh install.
+    SendEvent(QStringLiteral("first_visit"), InitAppStartEventParams(engagementTimeMsec));
     SendEvent(QStringLiteral("vapp_fresh_install"), InitAppStartEventParams(engagementTimeMsec));
 }
 
@@ -293,7 +320,10 @@ void VGAnalytics::SendAppCloseEvent(qint64 engagementTimeMsec)
     };
 
     SendEvent(QStringLiteral("vapp_close"), params);
-    if (QNetworkReply  const*reply = d->SendAnalytics())
+
+    qCDebug(vAnalytics) << "Flushing close event before shutdown.";
+
+    if (QNetworkReply const*reply = d->SendAnalytics())
     {
         QTimer timer;
         timer.setSingleShot(true);
@@ -303,6 +333,13 @@ void VGAnalytics::SendAppCloseEvent(qint64 engagementTimeMsec)
         connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
         QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
         loop.exec(); // wait for finished
+
+        qCDebug(vAnalytics) << "Close event flush finished"
+                            << (timer.isActive() ? "(reply received)." : "(timed out).");
+    }
+    else
+    {
+        qCDebug(vAnalytics) << "Nothing to flush for close event.";
     }
 }
 
@@ -448,7 +485,7 @@ auto VGAnalytics::InitAppStartEventParams(qint64 engagementTimeMsec) const -> QH
         // https://developers.google.com/analytics/devguides/collection/protocol/ga4/sending-events?client_type=gtag#optional_parameters_for_reports
         {QStringLiteral("engagement_time_msec"), engagementTimeMsec},
         {QStringLiteral("gui_language"), d->m_guiLanguage},
-        {QStringLiteral("country_code"), CountryCode()},
+        {QStringLiteral("country_code"), CachedCountryCode()},
         {QStringLiteral("kernel_type"), QSysInfo::kernelType()},
         {QStringLiteral("total_memory"), TotalMemory()},
     };
@@ -456,59 +493,94 @@ auto VGAnalytics::InitAppStartEventParams(qint64 engagementTimeMsec) const -> QH
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VGAnalytics::CountryCode() -> QString
+void VGAnalytics::CheckCountryCodeAsync(std::function<void(const QString &)> callback)
 {
-    QNetworkAccessManager manager;
+    struct RequestState
+    {
+        QNetworkAccessManager *manager = nullptr;
+        QNetworkReply *reply = nullptr;
+        QTimer *timer = nullptr;
+        std::function<void(const QString &)> callback{};
+        std::atomic_bool done{false};
+    };
+
+    auto state = std::make_shared<RequestState>();
+    state->manager = new QNetworkAccessManager;
+    state->callback = std::move(callback);
+
+    // On Windows the first request through a manager resolves the system proxy synchronously on the calling thread,
+    // and this one runs on the GUI thread. With WPAD enabled and the PAC host unreachable that blocks the whole UI for
+    // as long as WinHTTP takes to give up, which no timer below can bound. Valentina has no proxy settings of its own
+    // and nothing here needs one, so skip the lookup entirely.
+    state->manager->setProxy(QNetworkProxy::NoProxy);
+
     QNetworkRequest const request(QUrl(QStringLiteral("https://api.country.is")));
-    QNetworkReply *reply = manager.get(request);
+    state->reply = state->manager->get(request);
 
-    QTimer timer;
-    timer.setSingleShot(true);
-    timer.start(5s); // Set the timeout to 5 seconds
+    state->timer = new QTimer;
+    state->timer->setSingleShot(true);
 
-    QEventLoop eventLoop;
-
-    QObject::connect(&timer, &QTimer::timeout, &eventLoop, &QEventLoop::quit);
-    QObject::connect(reply, &QNetworkReply::finished, &eventLoop, &QEventLoop::quit);
-
-    eventLoop.exec();
-
-    auto country = QStringLiteral("Unknown");
-
-    if (timer.isActive())
+    auto finish = [state](const QString &country) -> void
     {
-        // The API response was received before the timeout
-        if (reply->error() == QNetworkReply::NoError)
+        if (bool expected = false; !state->done.compare_exchange_strong(expected, true))
         {
-            QByteArray const responseData = reply->readAll();
-            QJsonParseError error;
-            QJsonDocument const jsonDoc = QJsonDocument::fromJson(responseData, &error);
-
-            if (error.error == QJsonParseError::NoError && jsonDoc.isObject())
-            {
-                QJsonObject jsonObj = jsonDoc.object();
-                if (jsonObj.contains(QStringLiteral("country")))
-                {
-                    country = jsonObj[QStringLiteral("country")].toString().toLower();
-                }
-            }
+            return;
         }
-        else
-        {
-            qDebug() << "Error:" << reply->errorString();
-        }
-    }
-    else
-    {
-        // Timeout occurred
-        qDebug() << "Request timed out";
-        reply->abort();
-    }
 
-    // Clean up the reply
-    reply->deleteLater();
+        state->timer->stop();
+        state->timer->deleteLater();
+        state->reply->deleteLater();
+        state->manager->deleteLater();
+        CacheCountryCode(country);
+        state->callback(country);
+    };
 
-    return country;
+    QObject::connect(state->timer,
+                     &QTimer::timeout,
+                     [state, finish]() -> void
+                     {
+                         state->reply->abort();
+                         finish(QStringLiteral("Unknown"));
+                     });
+
+    QObject::connect(state->reply,
+                     &QNetworkReply::finished,
+                     [state, finish]() -> void
+                     {
+                         auto country = QStringLiteral("Unknown");
+                         if (state->reply->error() == QNetworkReply::NoError)
+                         {
+                             const QByteArray responseData = state->reply->readAll();
+                             QJsonParseError error;
+                             if (const QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData, &error);
+                                 error.error == QJsonParseError::NoError && jsonDoc.isObject())
+                             {
+                                 if (const QJsonObject jsonObj = jsonDoc.object();
+                                     jsonObj.contains(QStringLiteral("country")))
+                                 {
+                                     country = jsonObj[QStringLiteral("country")].toString().toLower();
+                                 }
+                             }
+                         }
+                         finish(country);
+                     });
+
+    // Abort the pending request on app shutdown. abort() re-emits finished(), which would run
+    // finish() and deleteLater() these objects while Windows' Schannel backend thread may still be
+    // mid-handshake on them, racing a use-after-free on that thread. Disconnect first so abort()'s
+    // finished() is a no-op and the objects are simply leaked for the remainder of the (already
+    // exiting) process instead of freed out from under the backend thread.
+    QObject::connect(qApp,
+                     &QCoreApplication::aboutToQuit,
+                     state->reply,
+                     [state]()
+                     {
+                         state->reply->disconnect();
+                         state->timer->disconnect();
+                         state->reply->abort();
+                     });
+
+    state->timer->start(5s);
 }
 
 //---------------------------------------------------------------------------------------------------------------------

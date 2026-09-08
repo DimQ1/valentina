@@ -1,44 +1,149 @@
-# Valentina 1.1.0 (unreleased)
-- Tool Normal. Fixed formula values were not saved.
-- New feature. True zero seam allowance width.
-- UI. Simplified measurement loading workflow.
-- Valentina app. New option "curveApproximationScale" to override the global curve approximation scale setting from the application preferences.
-- Added import/export increments from Table of variables.
-- Valentina app. New action Reload labels.
-- Valentina app. New action Install single line font.
-- Valentina app. Tool Segment Arc now supports an elliptical arc.
-- Valentina app. Added Global object color and default pen style properties.
-- New tool Elliptical arc with length.
-- Puzzle app. Show number of sheet in brackets to separate them from sheet name.
-- New tool Parallel curve.
-- New tool Graduated curve.
-- Fix calculation of seam allowance for symmetrical piece.
-- Dependency graph.
-- End of support for Windows versions below 10.
-- New option to disable mirroring a notch.
-- Valentina app. Improved control over notch visibility.
+# Valentina 1.1.1 (unreleased)
+- [Valentina app / Puzzle app] Fixed the piece name annotation text on ASTM DXF export being too small to read (2.5mm), below the 3.5-5mm the ASTM D6673 standard recommends for readability.
+- [Valentina app / Puzzle app] Fixed the Style System Text on AAMA/ASTM DXF export ignoring the configured pattern label font size and always using a fixed small text height.
+- [Tape app] Fixed the known measurements editor showing the wrong measurement diagram, and sometimes the wrong image title/size, after renaming an image on the Images tab: saving the title refreshed the Measurements tab's data instead of the Images tab's.
+- [Valentina app / Tape app / Puzzle app] Saving a file and backing one up before a format conversion no longer freeze the window. When a cloud-sync folder or antivirus makes the write slow, a progress indicator is shown instead of an unresponsive application.
+- [Valentina app] Fixed loading pre-1.1.1 patterns with a point cutting an arc into two segments: the segment could get a stale auto-generated name reused from another object, so an old formula referencing that segment's length failed to parse and the whole file refused to open.
+- [Valentina app / Tape app / Puzzle app] Fixed a crash after a fatal data error (e.g. a corrupted pattern with a duplicate object id): the handler's call to terminate the program resolved to QCoreApplication's own exit() instead of the C library one, so the program kept running on known-bad state instead of shutting down, and crashed later during an inconsistent teardown.
+- [Valentina app] Fixed a crash on closing the pattern window while a curve tool's control-point preview was still on screen: the scenes used to be torn down implicitly, after the status bar's tooltip label could already be destroyed, so clearing the tooltip on exit read freed memory.
+- [Valentina app] Fixed a crash in the Spline Path / Cubic Bezier Path tool dialogs: a pattern change elsewhere could re-enable the "Add point" button while its point selector was empty, and clicking it looked up a non-existent object and crashed the application.
+- [Valentina app] The pattern loader now warns when a pattern file has two objects sharing the same name, which can make formulas silently resolve to the wrong object; pass --pedantic on the command line to make this a hard error instead.
+- [Valentina app] Fixed Move/Rotate/Flip operations letting the auto-generated name of a resulting curve collide with an existing one, since the uniqueness check compared the name without its curve-type prefix. Two curves could silently end up with the same name.
+- [Misc] Fixed nearly invisible placeholder text in disabled/read-only fields on custom dark theme, and on Linux when the system palette already looked dark enough that the app skipped loading its own theme.
+- [Tape app] Added an "Install…" button next to the known measurements database selector to install a .vkm file directly, plus a dismissible warning banner shown when a measurement file references a known measurements database that isn't installed.
+- [Valentina app] Fixed a seam allowance corner set to "by second edge symmetry" growing a stray spike instead of mirroring the matching corner at the other end of the edge, so pieces that should look identical no longer differ.
+- [Valentina app] Fixed a crash from a sidebar tab's hover-fade animation still running after the tab bar that owned it was destroyed (e.g. closing a piece-creation dialog), which left the animation calling into freed memory.
+- [Valentina app / Tape app / Puzzle app] Removed the single-bundle macOS package. Only the multi-app bundle (separate Valentina.app, Tape.app and Puzzle.app in one DMG) is offered now.
+- [Valentina app] Fixed the horizontal scroll wheel (thumb wheel on mice that have one) doing nothing on the pattern and layout views; horizontal wheel events were computed as zero scrolling steps and discarded. Scrolling both axes at once no longer cuts one of them short.
+- [Valentina app / Puzzle app] Exporting details to SVG now wraps each piece in its own named Inkscape layer, for cutters and plotters that distinguish shapes by layer.
+- [Valentina app / Tape app] Fixed placeholder and search-history menus (label template editor, increments/final measurements search, known measurements search) splitting into multiple columns instead of scrolling on some Linux styles, cutting off long lists.
+- [Valentina app / Tape app / Puzzle app] Fixed exporting DXF files to a path containing non-Latin characters failing with "No such file or directory" on Windows; the codepage used to decode the path no longer depends on the system locale.
+- [Valentina app / Tape app / Puzzle app] Fixed a rare crash on shutdown when a second instance connected to an already-running one and quit while the background country lookup was still in flight: aborting the request could delete it out from under Windows' TLS backend thread.
+- [Valentina app] Fixed a point cut by length along a multi-segment curve sometimes landing far from the requested distance, depending on the curve's approximation scale.
+- [Valentina app] Fixed the pattern not recalculating after changing the default curve approximation scale in Preferences; curves and everything computed from their length kept using the old value until the file was reopened.
+- [Valentina app] Fixed a crash caused by a full reparse reissuing an id already used by an orphaned node left behind after its source curve or point was deleted; the id generator now accounts for every id present in the file, not just the ones it manages to rebuild as live objects.
+- [Valentina app / Tape app / Puzzle app] Stopped Qt painting warnings from popping an error dialog. A single broken paint device raised one modal box per painting call and per repaint, from inside the painting code itself, which could end in a crash.
+- [Tape app] Fixed a crash while reading a measurement file whose format was not recognized as either individual or multisize.
+- [Valentina app] Fixed a crash when opening Preferences after a monitor was disconnected or reconfigured. The screen reported an invalid physical size, and the single line font preview was sized from it.
+- [Tape app] Fixed a crash while the known measurements database was being rebuilt in the background after its folder changed.
+- [Valentina app / Tape app / Puzzle app] Fixed a crash when closing the application while usage statistics were still being sent.
+- [Valentina app / Tape app / Puzzle app] Stopped Qt network warnings from the background update check and usage statistics popping an error dialog. Messages such as "stream 1 finished with error" said nothing the user could act on, and showing them could crash the application.
+- [Valentina app / Tape app / Puzzle app] Fixed the interface freezing for minutes at a time when the settings file had grown corrupt. Values damaged by repeated character encoding could reach hundreds of megabytes, and Qt rewrites the whole file on every settings change; such values are now discarded on startup.
+- [Valentina app / Tape app / Puzzle app] Fixed the crash reporter reading its settings from a different file than the one the application saves to, so the "send crash reports" preference could be ignored. In Tape and Puzzle it also read Valentina's settings and attached a log file that did not exist.
+- [Valentina app / Tape app / Puzzle app] Fixed the interface freezing while the usage statistics and country lookup made network requests on the main thread, which on Windows could block for as long as the system took to resolve its proxy configuration.
+- [Valentina app] Fixed fold-line label font (single stroke outline / single line font) not updating live when changed in preferences; a reload was needed to see the new style.
+- [Valentina app / Puzzle app] Fixed fold-line ("Cut on Fold") labels rendering upside down, mirrored, or offset from the fold line on vertically or horizontally flipped pieces.
+- [Valentina app / Puzzle app] Fixed a hang when generating a layout on a single-CPU machine, where the nested layout-nesting parallelism deadlocked the thread pool and export never finished.
+- [Valentina app / Tape app / Puzzle app] Fixed a crash when redrawing the mode sidebar icons: the drop-shadow helper painted on intermediate image buffers without checking that they were allocated, so a degenerate tab size or low memory produced a null buffer and an access violation deep in Qt's paint code.
+- [Valentina app] Fixed a crash when deleting a tool (or otherwise triggering a full reparse) while a point/curve creation dialog was still open: clearing the scene deleted the dialog's on-screen preview, and the next click dereferenced the freed preview.
+- [Valentina app] Fixed a crash when closing or fully undoing a pattern: the draw and detail scenes kept dangling pointers to their deleted origin (axis) items, so the next zoom-to-fit or export dereferenced freed memory.
+- [Valentina app / Tape app / Puzzle app] Fixed a crash that could happen when a warning or critical message was logged in the middle of another operation (e.g. rebuilding a piece's geometry while applying piece options): the message handler now defers its dialog to the next event loop iteration instead of opening a nested one on top of an in-progress update.
+- [Valentina app] Fixed crash on startup in locales whose math function names translate to non-identifier characters (e.g. Japanese), which the formula parser could not register.
+- [Valentina app] Fixed sporadic crash when opening or closing a pattern file. Two document walks - the id uniqueness check and the element id cache - ran on worker threads while parsing rewrote the same QDomDocument on the main thread, and QDomDocument is not thread-safe; closing a document could also free it while a walk was still running. Both walks now run on the main thread, and neither scans the document quadratically any more, so they are faster than the threaded versions they replace.
+- [Misc] Fixed files occasionally being saved empty/corrupt. Documents (patterns, measurements, watermarks, label templates and known measurements) are now validated against their schema before the file is committed, so a damaged document can no longer overwrite a good file on disk.
+- [Valentina app] Fixed crashes and stale dependency edges from the background formula dependency checker: running checks are now actually cancelled, and pending checks are cancelled when a document is cleared or closed.
+- [Valentina app] Fixed use-after-free crashes triggered by a full reparse after undo/redo: any open tool options dialog is now closed before tools are freed, and the reparse is deferred so it no longer runs while a tool is still being deleted.
+- [Valentina app] Fixed crash when toggling a piece's in-layout state for a tool of the wrong type in the pieces list.
+- [Valentina app] Fixed release-build crash when undoing or redoing deletion of a piece.
+- [Valentina app] Fixed hang when uniting details with malformed union data.
+- [Valentina app / Puzzle app] Fixed crash when a piece's fold line produced degenerate arrow shapes.
+- [Puzzle app] Fixed crashes in the piece carousel when starting a drag on an empty item and when opening the context menu on a non-piece item.
+- [Misc] Fixed potential crash when a text encoding could not be resolved to a codec name.
 
-# Valentina 1.0.1 (unreleased)
-- Tool Normal. Fixed formula values were not saved.
-- Tape app. Corrected support for multisize tables when using inch units.
-- Tape app. Corrected showing of full circumference dimension values.
-- Correct application status of Windows installer.
-- Puzzle app. Show mirror line option has no effect.
-- Fixed incorrect reseting foreground color of text fields.
-- Hide error: GOAWAY invalid stream.
-- Fix incorrect codepage when export DXF files on Windows.
-- Fixed crash while export a font corrections.
-- Puzzle app. Fixed duplication of notches.
-- Improved custom Dark/Light theme styles.
-- Fix calculation notch on seam allowance.
-- Valentina app. Added missing pen style control in property browser for elliptical arc.
-- Puzzle app. Show number of sheet in brackets to separate them from sheet name.
-- Valentina app. Fix incorrect inclusion of custom seam allowance.
-- Fix calculation of seam allowance for symmetrical piece.
-- Fix popup menu style for tool button on MacOS.
-- Valentina app. Fix crash on multi monitor systems.
-- Tape app. Fixed showing and saving a measurement image from database of known measurements.
-- Valentina app. Fixed generation duplicate curve names.
+# Valentina 1.1.0 June 27, 2026
+- [Tape app] The measurement database dialog now refreshes the diagram immediately when an image's size scale changes.
+- [Valentina app] Faster size switching in Detail mode. Pieces now refresh immediately instead of after a fixed delay, their geometry is recomputed in parallel across all pieces, the gradation combo boxes are no longer rebuilt redundantly, bursts of parses are coalesced by a single debounce timer, the dependency graph is no longer rebuilt on reparses that only change values (size switch, measurement sync), and compiled tool formulas are cached so reparsing re-evaluates them without recompiling.
+- [Valentina app] Fixed crash when syncing a multisize measurement file fails (e.g. user cancels the missing-measurements dialog): measurement pointer was nulled out but dimension comboboxes remained connected, causing a null dereference on the next dimension change event.
+- [Valentina app] Fixed draw scene labels showing wrong color at startup and on theme switch when a custom theme is opposite the system theme.
+- [Valentina app] Add canvas visualization for the Union Details tool.
+- [Valentina app] Fixed accessibility warning on macOS when a QTableWidget had no selection.
+- [Valentina app] Fixed crash on Windows when closing the application while a draw tool dialog (e.g. Rotation) was active. On Windows, owned popup HWNDs (Qt::Popup color picker) could be destroyed by the OS before Qt finished deleting child widgets, leaving a dangling pointer; dialog destructors then triggered a settings signal that called into the freed popup, causing an access violation.
+- [Valentina app] Fixed crash when closing a Pin dialog after undo/redo of piece operations. Deleting a piece undo command freed its modeling node tools (VNodePoint, VNodeArc, etc.) as QObject children, leaving dangling pointers in the tools map. The next LiteParseTree call would then write through those pointers, causing an access violation in VContainer::operator=.
+- [Valentina app] Tool Normal. Fixed formula values were not saved.
+- [Valentina app / Puzzle app] New feature. True zero seam allowance width.
+- [Valentina app / Tape app] UI. Simplified measurement loading workflow.
+- [Valentina app] New option "curveApproximationScale" to override the global curve approximation scale setting from the application preferences.
+- [Valentina app] Added import/export increments from Table of variables.
+- [Valentina app] New action Reload labels.
+- [Valentina app] New action Install single line font.
+- [Valentina app] Tool Segment Arc now supports an elliptical arc.
+- [Valentina app] Added Global object color and default pen style properties.
+- [Valentina app] New tool Elliptical arc with length.
+- [Puzzle app] Show number of sheet in brackets to separate them from sheet name.
+- [Valentina app] New tool Parallel curve.
+- [Valentina app] New tool Graduated curve.
+- [Valentina app / Puzzle app] Fix calculation of seam allowance for symmetrical piece.
+- [Valentina app] Dependency graph.
+- [Misc] End of support for Windows versions below 10.
+- [Valentina app / Puzzle app] New option to disable mirroring a notch.
+- [Valentina app] Improved control over notch visibility.
+- [Valentina app] Editing group operations.
+- [Valentina app] Added filterable lists.
+- [Valentina app] Segment visualization.
+- [Valentina app] Darken the inactive pattern piece.
+- [Puzzle app] New option Print text as paths.
+- [Valentina app] New action Auto-arrange labels (Ctrl+Shift+A). Automatically repositions point labels in Draw and Details mode to reduce overlaps.
+
+# Valentina 1.0.5 (unreleased)
+- [Valentina app / Tape app / Puzzle app] Usage statistics collection is now opt-in (disabled by default) and never runs in command-line mode.
+- [Valentina app] Fixed the Hide labels option and label font size changes not taking effect until the next zoom, including stale label state on the other scene after switching to it.
+
+# Valentina 1.0.4 June 26, 2026
+- [Valentina app] Fixed scene points (including spline control points) showing at the wrong size until the next zoom, e.g. after undo.
+- [Valentina app] Fixed point hover highlight no longer appearing; hovering a point's name label now highlights the point as well.
+
+# Valentina 1.0.3 June 23, 2026
+- [Valentina app] Ask for confirmation before overwriting an existing file when exporting font corrections.
+- [Valentina app] Fixed the node option tool buttons (passmark, reverse, excluded, etc.) in the Seam Allowance and Piece Path dialogs not refreshing the notch list and visualization until the dialog was reopened.
+- [Tape app] Fixed crash from concurrent access to the known measurements database while it was being refreshed in the background.
+- [Tape app] Fixed a crash when the known-measurements database synced while a measurement refresh was already running, caused by re-entrant rebuilding of the measurement data.
+- [Valentina app] Fixed crash when closing the History dialog after the pattern history changed while the dialog was open.
+- [Valentina app] Fixed a notch ignoring its manual angle when the notch axis met the seam allowance near a corner.
+- [Valentina app] Fixed the second notch on the seam line ignoring the manual passmark angle.
+- [Misc] Fixed crash when evaluating a malformed if-then-else formula (e.g. a ternary branch with a missing operand).
+- [Valentina app] Fixed crash when pressing undo/redo while a tool options dialog is open, caused by the resulting full reparse destroying the tool and its geometry before the dialog was accepted.
+- [Tape app] Fixed sluggish image size scale control in the known measurements editor by no longer rebuilding the whole image list on every value change.
+- [Tape app] Fixed image list in the known measurements editor showing a single column until the Images tab was activated or the image size value was changed.
+- [Tape app] Fixed wrong diagram image shown for the selected measurement after opening the known measurements editor.
+- [Valentina app] Fixed crash on shutdown while sending the application close statistic, caused by a nested event loop running during application teardown.
+- [Valentina app] Fixed crash when syncing a multisize measurement file fails (e.g. user cancels the missing-measurements dialog): measurement pointer was nulled out but dimension comboboxes remained connected, causing a null dereference on the next dimension change event.
+
+# Valentina 1.0.2 June 3, 2026
+- [Valentina app] Fixed draw scene labels showing wrong color at startup and on theme switch when a custom theme is opposite the system theme.
+- [Valentina app] Fixed crash during pattern parsing when a modeling node object has an unexpected type, caused by SCASSERT being compiled away in release builds.
+- [Valentina app] Fixed crash when loading old-format pattern files containing piece elements without a version attribute.
+- [Valentina app] Fixed crash when undoing a piece path operation while a dialog is open.
+- [Valentina app] Fixed accessibility warning on macOS when a QTableWidget had no selection.
+- [Valentina app] Fixed crash when inserting nodes after undo/redo of piece operations.
+- [Tape app] Fix crash in SyncKnownMeasurements caused by wrong deletion order in TMainWindow destructor.
+- [Valentina app] Fixed crash on Windows when undoing or redoing tool addition with the property browser open.
+
+# Valentina 1.0.1 May 16, 2026
+- [Valentina app] Tool Normal. Fixed formula values were not saved.
+- [Tape app] Corrected support for multisize tables when using inch units.
+- [Tape app] Corrected showing of full circumference dimension values.
+- [Misc] Correct application status of Windows installer.
+- [Puzzle app] Show mirror line option has no effect.
+- [Misc] Fixed incorrect reseting foreground color of text fields.
+- [Misc] Hide error: GOAWAY invalid stream.
+- [Misc] Fix incorrect codepage when export DXF files on Windows.
+- [Valentina app / Puzzle app] Fixed crash while export a font corrections.
+- [Puzzle app] Fixed duplication of notches.
+- [Misc] Improved custom Dark/Light theme styles.
+- [Valentina app / Puzzle app] Fix calculation notch on seam allowance.
+- [Valentina app] Added missing pen style control in property browser for elliptical arc.
+- [Puzzle app] Show number of sheet in brackets to separate them from sheet name.
+- [Valentina app] Fix incorrect inclusion of custom seam allowance.
+- [Valentina app / Puzzle app] Fix calculation of seam allowance for symmetrical piece.
+- [Misc] Fix popup menu style for tool button on MacOS.
+- [Valentina app] Fix crash on multi monitor systems.
+- [Tape app] Fixed showing and saving a measurement image from database of known measurements.
+- [Valentina app] Fixed generation duplicate curve names.
+- [Puzzle app] Fix blank first page when printing to PDF.
+- [Valentina app] Block curve move when select with tool.
+- [Puzzle app] Fix empty second blank page when printing tiled layout.
+- [Puzzle app] Adjust macOS font scaling to fix oversized text in print mode.
+- [Valentina app] Fixed arc transformations.
 
 # Valentina 1.0.0 July 21, 2025
 - Fix Puzzle app crash when application closing.

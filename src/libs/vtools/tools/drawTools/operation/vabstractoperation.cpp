@@ -40,6 +40,7 @@
 #include "../ifc/xml/vpatterngraph.h"
 #include "../vgeometry/vpointf.h"
 #include "../vmisc/compatibility.h"
+#include "../vwidgets/labelarrange/labelarrangetypes.h"
 #include "../vwidgets/vsimplepoint.h"
 #include "vtools/undocommands/renameobject.h"
 
@@ -89,6 +90,77 @@ auto BuildNameMap(const QVector<SourceItem> &items) -> QMap<quint32, QString>
     }
     return names;
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+auto BuildDestIdByRecord(const QVector<DestinationItem> &destination) -> QMap<QUuid, quint32>
+{
+    QMap<QUuid, quint32> destIdByRecord;
+    for (const auto &dest : destination)
+    {
+        if (dest.id != NULL_ID && !dest.recordId.isNull())
+        {
+            destIdByRecord.insert(dest.recordId, dest.id);
+        }
+    }
+    return destIdByRecord;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto CollectRenames(const QVector<SourceItem> &newSource,
+                    const QMap<quint32, QString> &oldNames,
+                    const QMap<QUuid, quint32> &destIdByRecord)
+    -> QVector<std::tuple<quint32, quint32, QString, QString>>
+{
+    QVector<std::tuple<quint32, quint32, QString, QString>> renames;
+
+    for (const auto &newItem : newSource)
+    {
+        if (newItem.id == NULL_ID || newItem.recordId.isNull())
+        {
+            continue;
+        }
+
+        if (!oldNames.contains(newItem.id))
+        {
+            continue; // new record, skip
+        }
+
+        const QString &oldName = oldNames.value(newItem.id);
+        if (oldName == newItem.name)
+        {
+            continue;
+        }
+
+        if (!destIdByRecord.contains(newItem.recordId))
+        {
+            continue; // no matching destination, skip
+        }
+
+        renames.append({newItem.id, destIdByRecord.value(newItem.recordId), oldName, newItem.name});
+    }
+
+    return renames;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+template<typename T>
+void SetupRenameCommand(T *command, bool fullParse, bool isLast, VAbstractPattern *doc)
+{
+    command->SetFullParse(fullParse);
+    if (!isLast)
+    {
+        return;
+    }
+
+    if (fullParse)
+    {
+        QObject::connect(command, &T::NeedFullParsing, doc, &VAbstractPattern::NeedFullParsing, Qt::QueuedConnection);
+    }
+    else
+    {
+        QObject::connect(command, &T::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
+    }
+}
 } // namespace
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -111,7 +183,7 @@ auto VAbstractOperation::IsRemovable() const -> RemoveStatus
     auto Filter = [](const auto &node) -> auto
     { return node.type != VNodeType::MODELING_TOOL && node.type != VNodeType::MODELING_OBJECT; };
 
-    for (const auto &item : destination)
+    for (const auto &item : m_destination)
     {
         auto const dependecies = patternGraph->TryGetDependentNodes(item.id, 100, Filter);
 
@@ -141,7 +213,7 @@ void VAbstractOperation::SetNotes(const QString &notes)
 //---------------------------------------------------------------------------------------------------------------------
 auto VAbstractOperation::SourceItems() const -> QVector<SourceItem>
 {
-    return source;
+    return m_source;
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -241,6 +313,17 @@ void VAbstractOperation::ExtractData(const QDomElement &domElement, VAbstractOpe
 {
     initData.source = ExtractSourceData(domElement);
     initData.destination = ExtractDestinationData(domElement);
+
+    if (initData.source.size() != initData.destination.size())
+    {
+        qWarning() << "Source and destination object count mismatch:" << initData.source.size() << "vs"
+                   << initData.destination.size();
+    }
+
+    for (int i = 0; i < initData.source.size() && i < initData.destination.size(); ++i)
+    {
+        initData.destination[i].recordId = initData.source.at(i).recordId;
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -608,8 +691,8 @@ void VAbstractOperation::LabelChangePosition(const QPointF &pos, quint32 labelId
 VAbstractOperation::VAbstractOperation(const VAbstractOperationInitData &initData, QGraphicsItem *parent)
   : VDrawTool(initData.doc, initData.data, initData.id, initData.notes),
     QGraphicsLineItem(parent),
-    source(initData.source),
-    destination(initData.destination)
+    m_source(initData.source),
+    m_destination(initData.destination)
 {
     connect(initData.doc,
             &VAbstractPattern::UpdateToolTip,
@@ -646,6 +729,19 @@ void VAbstractOperation::AddToFile()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void VAbstractOperation::RefreshDataInFile()
+{
+    // We no longer need to handle suffix and names here. The code can be removed.
+    Q_STATIC_ASSERT(VPatternConverter::PatternMinVer < FormatVersion(1, 1, 1));
+    QDomElement domElement = doc->FindElementById(m_id, getTagName());
+    if (domElement.hasAttribute(AttrSuffix))
+    {
+        domElement.removeAttribute(AttrSuffix);
+        SaveSourceDestination(domElement, m_source, m_destination);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VAbstractOperation::ChangeLabelVisibility(quint32 id, bool visible)
 {
     if (!operatedObjects.contains(id))
@@ -655,10 +751,10 @@ void VAbstractOperation::ChangeLabelVisibility(quint32 id, bool visible)
 
     if (const VAbstractSimple *obj = operatedObjects.value(id); (obj != nullptr) && obj->GetType() == GOType::Point)
     {
-        if (auto dItem = std::find_if(destination.begin(),
-                                      destination.end(),
+        if (auto dItem = std::find_if(m_destination.begin(),
+                                      m_destination.end(),
                                       [id](const DestinationItem &dItem) -> bool { return dItem.id == id; });
-            dItem != destination.end())
+            dItem != m_destination.end())
         {
             dItem->showLabel = visible;
         }
@@ -669,52 +765,15 @@ void VAbstractOperation::ChangeLabelVisibility(quint32 id, bool visible)
 //---------------------------------------------------------------------------------------------------------------------
 void VAbstractOperation::ApplyToolOptions(const QDomElement &oldDomElement, const QDomElement &newDomElement)
 {
-    bool const updateVisibilityOptions = NeedUpdateVisibilityGroup();
+    auto *newGroup = new QUndoCommand(); // an empty command
+    newGroup->setText(tr("save tool options"));
 
-    if (updateVisibilityOptions)
-    {
-        VAbstractApplication::VApp()->getUndoStack()->beginMacro(tr("operation options"));
-    }
-
-    auto *saveOptions = new SaveToolOptions(oldDomElement, newDomElement, doc, m_id);
+    const auto *saveOptions = new SaveToolOptions(oldDomElement, newDomElement, doc, m_id, newGroup);
     connect(saveOptions, &SaveToolOptions::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
-    VAbstractApplication::VApp()->getUndoStack()->push(saveOptions);
 
-    if (updateVisibilityOptions)
-    {
-        vidtype const group = doc->GroupLinkedToTool(m_id);
+    HandleVisibilityGroupChange(newGroup);
 
-        if (hasLinkedGroup)
-        {
-            if (group != null_id)
-            {
-                auto *groupOptions = new ChangeGroupOptions(doc, group, groupName, groupTags);
-                connect(groupOptions, &ChangeGroupOptions::UpdateGroups, doc, &VAbstractPattern::UpdateVisiblityGroups);
-                VAbstractApplication::VApp()->getUndoStack()->push(groupOptions);
-            }
-            else
-            {
-                VAbstractOperationInitData initData;
-                initData.id = m_id;
-                initData.hasLinkedVisibilityGroup = hasLinkedGroup;
-                initData.visibilityGroupName = groupName;
-                initData.visibilityGroupTags = groupTags;
-                initData.data = &(VDataTool::data);
-                initData.doc = doc;
-                initData.source = source;
-
-                VAbstractOperation::CreateVisibilityGroup(initData);
-            }
-        }
-        else
-        {
-            auto *delGroup = new DelGroup(doc, group);
-            connect(delGroup, &DelGroup::UpdateGroups, doc, &VAbstractPattern::UpdateVisiblityGroups);
-            VAbstractApplication::VApp()->getUndoStack()->push(delGroup);
-        }
-
-        VAbstractApplication::VApp()->getUndoStack()->endMacro();
-    }
+    VAbstractApplication::VApp()->getUndoStack()->push(newGroup);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -750,8 +809,31 @@ void VAbstractOperation::ReadToolAttributes(const QDomElement &domElement)
 {
     VDrawTool::ReadToolAttributes(domElement);
 
-    source = ExtractSourceData(domElement);
-    destination = ExtractDestinationData(domElement);
+    QVector<SourceItem> source = ExtractSourceData(domElement);
+    for (auto &item : source)
+    {
+        auto it = std::find_if(m_source.cbegin(),
+                               m_source.cend(),
+                               [&item](const SourceItem &s) { return s.id == item.id; });
+        if (it != m_source.cend())
+        {
+            item.recordId = it->recordId;
+        }
+    }
+    m_source = source;
+
+    m_destination = ExtractDestinationData(domElement);
+
+    if (m_source.size() != m_destination.size())
+    {
+        qWarning() << "Source and destination object count mismatch:" << m_source.size() << "vs"
+                   << m_destination.size();
+    }
+
+    for (int i = 0; i < m_source.size() && i < m_destination.size(); ++i)
+    {
+        m_destination[i].recordId = m_source.at(i).recordId;
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -766,7 +848,7 @@ void VAbstractOperation::SaveOptions(QDomElement &tag, QSharedPointer<VGObject> 
         tag.removeAttribute(AttrSuffix);
     }
 
-    SaveSourceDestination(tag);
+    SaveSourceDestination(tag, m_source, m_destination);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -779,10 +861,10 @@ void VAbstractOperation::UpdateNamePosition(quint32 id, const QPointF &pos)
 
     if (const VAbstractSimple *obj = operatedObjects.value(id); (obj != nullptr) && obj->GetType() == GOType::Point)
     {
-        if (auto dItem = std::find_if(destination.begin(),
-                                      destination.end(),
+        if (auto dItem = std::find_if(m_destination.begin(),
+                                      m_destination.end(),
                                       [id](const DestinationItem &dItem) -> bool { return dItem.id == id; });
-            dItem != destination.end())
+            dItem != m_destination.end())
         {
             dItem->mx = pos.x();
             dItem->my = pos.y();
@@ -792,7 +874,9 @@ void VAbstractOperation::UpdateNamePosition(quint32 id, const QPointF &pos)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VAbstractOperation::SaveSourceDestination(QDomElement &tag)
+void VAbstractOperation::SaveSourceDestination(QDomElement &tag,
+                                               const QVector<SourceItem> &source,
+                                               const QVector<DestinationItem> &destination)
 {
     VAbstractPattern::RemoveAllChildren(tag);
 
@@ -917,11 +1001,11 @@ auto VAbstractOperation::NeedUpdateVisibilityGroup() const -> bool
 {
     vidtype const group = doc->GroupLinkedToTool(m_id);
 
-    if (hasLinkedGroup)
+    if (m_hasLinkedGroup)
     {
         if (group != null_id)
         {
-            if (groupName != doc->GetGroupName(group) || groupTags != doc->GetGroupTags(group))
+            if (m_groupName != doc->GetGroupName(group) || m_groupTags != doc->GetGroupTags(group))
             {
                 return true; // rename group
             }
@@ -940,9 +1024,49 @@ auto VAbstractOperation::NeedUpdateVisibilityGroup() const -> bool
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void VAbstractOperation::HandleVisibilityGroupChange(QUndoCommand *parent)
+{
+    if (!NeedUpdateVisibilityGroup())
+    {
+        return;
+    }
+
+    SCASSERT(parent != nullptr)
+
+    vidtype const group = doc->GroupLinkedToTool(m_id);
+
+    if (m_hasLinkedGroup)
+    {
+        if (group != null_id)
+        {
+            const auto *groupOptions = new ChangeGroupOptions(doc, group, m_groupName, m_groupTags, parent);
+            connect(groupOptions, &ChangeGroupOptions::UpdateGroups, doc, &VAbstractPattern::UpdateVisiblityGroups);
+        }
+        else
+        {
+            VAbstractOperationInitData initData;
+            initData.id = m_id;
+            initData.hasLinkedVisibilityGroup = m_hasLinkedGroup;
+            initData.visibilityGroupName = m_groupName;
+            initData.visibilityGroupTags = m_groupTags;
+            initData.data = &(VDataTool::data);
+            initData.doc = doc;
+            initData.source = m_source;
+
+            VAbstractOperation::CreateVisibilityGroup(initData, parent);
+        }
+    }
+    else
+    {
+        const auto *delGroup = new DelGroup(doc, group, parent);
+        connect(delGroup, &DelGroup::UpdateGroups, doc, &VAbstractPattern::UpdateVisiblityGroups);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void VAbstractOperation::InitOperatedObjects()
 {
-    for (const auto &object : std::as_const(destination))
+    for (const auto &object : std::as_const(m_destination))
     {
         const QSharedPointer<VGObject> obj = VAbstractTool::data.GetGObject(object.id);
 
@@ -974,6 +1098,9 @@ void VAbstractOperation::InitOperatedObjects()
                 connect(point, &VSimplePoint::Delete, this, &VAbstractOperation::DeleteFromLabel);
                 connect(point, &VSimplePoint::NameChangedPosition, this, &VAbstractOperation::LabelChangePosition);
                 point->RefreshPointGeometry(*VAbstractTool::data.GeometricObject<VPointF>(object.id));
+                point->setData(LabelKindRole, static_cast<int>(LabelMoveRequest::Kind::Operation));
+                point->setData(LabelToolIdRole, static_cast<quint32>(m_id));
+                point->setData(LabelPointIdRole, static_cast<quint32>(object.id));
                 operatedObjects.insert(object.id, point);
                 break;
             }
@@ -1042,7 +1169,7 @@ auto VAbstractOperation::VisibilityGroupToolTip() const -> QString
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VAbstractOperation::CreateVisibilityGroup(const VAbstractOperationInitData &initData)
+void VAbstractOperation::CreateVisibilityGroup(const VAbstractOperationInitData &initData, QUndoCommand *parent)
 {
     if (not initData.hasLinkedVisibilityGroup && not initData.visibilityGroupName.isEmpty())
     {
@@ -1056,9 +1183,12 @@ void VAbstractOperation::CreateVisibilityGroup(const VAbstractOperationInitData 
                                                             initData.visibilityGroupTags, groupData, initData.id);
         not group.isNull())
     {
-        auto *addGroup = new AddGroup(group, initData.doc);
+        auto *addGroup = new AddGroup(group, initData.doc, parent);
         connect(addGroup, &AddGroup::UpdateGroups, initData.doc, &VAbstractPattern::UpdateVisiblityGroups);
-        VAbstractApplication::VApp()->getUndoStack()->push(addGroup);
+        if (parent == nullptr)
+        {
+            VAbstractApplication::VApp()->getUndoStack()->push(addGroup);
+        }
     }
 }
 
@@ -1099,65 +1229,51 @@ void VAbstractOperation::ProcessOperationToolOptions(const QDomElement &oldDomEl
                                                      const QVector<SourceItem> &newSource)
 {
     // Build maps for efficient lookup by id
-    const QMap<quint32, QString> oldNames = BuildNameMap(source);
+    const QMap<quint32, QString> oldNames = BuildNameMap(m_source);
     const QMap<quint32, QString> newNames = BuildNameMap(newSource);
 
     // Check if there are any name changes
     if (oldNames == newNames)
     {
-        VDrawTool::ApplyToolOptions(oldDomElement, newDomElement);
+        VAbstractOperation::ApplyToolOptions(oldDomElement, newDomElement);
         return;
     }
+
+    // Detect additions or removals by comparing id sets
+    const QSet<quint32> oldIds = ConvertToSet<quint32>(oldNames.keys());
+    const QSet<quint32> newIds = ConvertToSet<quint32>(newNames.keys());
+    const bool sourceSetChanged = (oldIds != newIds);
+
+    const QMap<QUuid, quint32> destIdByRecord = BuildDestIdByRecord(m_destination);
+    const auto renames = CollectRenames(newSource, oldNames, destIdByRecord);
 
     QUndoStack *undoStack = VAbstractApplication::VApp()->getUndoStack();
     auto *newGroup = new QUndoCommand(); // an empty command
     newGroup->setText(tr("save tool options"));
 
     auto *saveOptions = new SaveToolOptions(oldDomElement, newDomElement, doc, m_id, newGroup);
-    saveOptions->SetInGroup(true);
-    connect(saveOptions, &SaveToolOptions::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
+    saveOptions->SetInGroup(!renames.isEmpty());
+    SetupRenameCommand(saveOptions, sourceSetChanged, /*isLast=*/true, doc);
 
-    const QSet<quint32> oldIds = ConvertToSet<quint32>(oldNames.keys());
-    const QSet<quint32> newIds = ConvertToSet<quint32>(newNames.keys());
-    const QSet<quint32> commonIds = oldIds & newIds;
-
-    // Collect all rename operations first
-    QVector<QPair<quint32, QPair<QString, QString>>> renames;
-    renames.reserve(commonIds.size());
-    for (quint32 const id : std::as_const(commonIds))
-    {
-        const QString oldName = oldNames.value(id);
-        const QString newName = newNames.value(id);
-
-        if (oldName != newName)
-        {
-            renames.append(qMakePair(id, qMakePair(oldName, newName)));
-        }
-    }
+    HandleVisibilityGroupChange(newGroup);
 
     // Process rename operations, connecting signal only for the last one
     for (int i = 0; i < renames.size(); ++i)
     {
-        const auto &[id, names] = renames.at(i);
+        const auto &[sourceId, destId, oldName, newName] = renames.at(i);
+        const bool isLast = (i == renames.size() - 1);
 
-        if (const QSharedPointer<VGObject> obj = VDataTool::data.GetGObject(id); obj->getType() == GOType::Point)
+        if (const QSharedPointer<VGObject> obj = VDataTool::data.GetGObject(sourceId); obj->getType() == GOType::Point)
         {
-            auto *renameLabel = new RenameLabel(names.first, names.second, doc, id, newGroup);
-
-            if (i == renames.size() - 1) // Last rename operation
-            {
-                connect(renameLabel, &RenameLabel::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
-            }
+            SetupRenameCommand(new RenameLabel(oldName, newName, doc, destId, newGroup), sourceSetChanged, isLast, doc);
         }
         else
         {
             const CurveAliasType type = RenameAlias::CurveType(obj->getType());
-            auto *renameName = new RenameAlias(type, names.first, names.second, doc, id, newGroup);
-
-            if (i == renames.size() - 1) // Last rename operation
-            {
-                connect(renameName, &RenameAlias::NeedLiteParsing, doc, &VAbstractPattern::LiteParseTree);
-            }
+            SetupRenameCommand(new RenameAlias(type, oldName, newName, doc, destId, newGroup),
+                               sourceSetChanged,
+                               isLast,
+                               doc);
         }
     }
 

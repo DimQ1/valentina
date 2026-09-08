@@ -517,7 +517,7 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22/go-previous-use.svg</file> -->
         <file>icons/La-Sierra-Light/actions/22x22/go-top.svg</file>
         <file>icons/La-Sierra-Light/actions/22x22/go-up.svg</file>
-        <!-- <file>icons/La-Sierra-Light/actions/22x22/gtk-convert.svg</file> -->
+        <file>icons/La-Sierra-Light/actions/22x22/gtk-convert.svg</file>
         <!-- <file>icons/La-Sierra-Light/actions/22x22/gtk-select-font.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/help-donate.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/help-faq.svg</file> -->
@@ -1101,7 +1101,6 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22/editclear.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/editcopy.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/editcut.svg</file> -->
-        <!-- <file>icons/La-Sierra-Light/actions/22x22/editdelete.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/editimage.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/editpaste.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/epiphany-bookmarks.svg</file> -->
@@ -1695,7 +1694,7 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22/viewmag1.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/viewmagfit.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/visibility.svg</file> -->
-        <!-- <file>icons/La-Sierra-Light/actions/22x22/window-close.svg</file> -->
+        <file>icons/La-Sierra-Light/actions/22x22/window-close.svg</file>
         <!-- <file>icons/La-Sierra-Light/actions/22x22/window-fullscreen.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/window.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22/window_fullscreen.svg</file> -->
@@ -2025,7 +2024,7 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/go-previous-use.svg</file> -->
         <file>icons/La-Sierra-Light/actions/22x22@2x/go-top.svg</file>
         <file>icons/La-Sierra-Light/actions/22x22@2x/go-up.svg</file>
-        <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/gtk-convert.svg</file> -->
+        <file>icons/La-Sierra-Light/actions/22x22@2x/gtk-convert.svg</file>
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/gtk-select-font.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/help-donate.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/help-faq.svg</file> -->
@@ -2609,7 +2608,6 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editclear.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editcopy.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editcut.svg</file> -->
-        <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editdelete.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editimage.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/editpaste.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/epiphany-bookmarks.svg</file> -->
@@ -3203,7 +3201,7 @@
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/viewmag1.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/viewmagfit.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/visibility.svg</file> -->
-        <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/window-close.svg</file> -->
+        <file>icons/La-Sierra-Light/actions/22x22@2x/window-close.svg</file>
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/window-fullscreen.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/window.svg</file> -->
         <!-- <file>icons/La-Sierra-Light/actions/22x22@2x/window_fullscreen.svg</file> -->

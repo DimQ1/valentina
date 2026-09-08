@@ -108,6 +108,7 @@ void Visualization::SetLineStyle(const Qt::PenStyle &value)
 //---------------------------------------------------------------------------------------------------------------------
 void Visualization::StartVisualMode()
 {
+    qCDebug(vVis) << "StartVisualMode:" << static_cast<void *>(this);
     auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
     SCASSERT(scene != nullptr)
 
@@ -133,15 +134,15 @@ auto Visualization::InitPoint(VColorRole role, QGraphicsItem *parent, qreal z) -
 
 //---------------------------------------------------------------------------------------------------------------------
 auto Visualization::FindLengthFromUser(const QString &expression,
-                                       const QHash<QString, QSharedPointer<VInternalVariable>> *vars, bool fromUser)
-    -> qreal
+                                       const immer::map<QString, QSharedPointer<VInternalVariable>> *vars,
+                                       bool fromUser) -> qreal
 {
     return VAbstractValApplication::VApp()->toPixel(FindValFromUser(expression, vars, fromUser));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto Visualization::FindValFromUser(const QString &expression,
-                                    const QHash<QString, QSharedPointer<VInternalVariable>> *vars, bool fromUser)
+                                    const immer::map<QString, QSharedPointer<VInternalVariable>> *vars, bool fromUser)
     -> qreal
 {
     qreal val = 0;

@@ -54,9 +54,18 @@ public:
     explicit VWidgetDependencies(VAbstractPattern *doc, QWidget *parent = nullptr);
     ~VWidgetDependencies() override;
 
+    void Clear();
+
+    // While a tool is being created (a creation dialog is open) deleting a tool would trigger a full reparse
+    // that clears the scene out from under the open dialog. Block deletion until the tool is finished.
+    void SetToolCreationActive(bool active);
+
 public slots:
     void UpdateDependencies();
-    void ShowDependency(QGraphicsItem *item);
+    void ShowDependency(vidtype id);
+
+public:
+    static auto ItemToId(QGraphicsItem *item) -> vidtype;
 
 signals:
     void ShowProperties(QGraphicsItem *item) const;
@@ -67,6 +76,7 @@ protected:
 
 private slots:
     void OnNodeSelectionChanged(const QModelIndex &current, const QModelIndex &previous);
+    void OnNodeClicked(const QModelIndex &index);
     void OnContextMenuRequested(const QPoint &pos);
 
     void MoveTop();
@@ -83,6 +93,7 @@ private:
     VTreeStateManager *m_stateManager{nullptr};
     int m_indexPatternBlock{-1};
     vidtype m_activeTool{NULL_ID};
+    bool m_toolCreationActive{false};
     VHistoryManager m_historyManager;
 
     void ShowToolProperties(VAbstractTool *tool, bool show) const;
@@ -95,8 +106,14 @@ private:
     void ExpandAllChildren(const QModelIndex &index);
     void CollapseAllChildren(const QModelIndex &index);
     void GoToObject(vidtype id) const;
+    void DeleteTool(vidtype id) const;
+
+    auto CanDeleteObject(vidtype id) const -> bool;
+    auto CanGoToObject(vidtype id) const -> bool;
 
     void EnableMoveButtons(const QModelIndex &current);
+
+    void HighlightCurrentNode(const QModelIndex &current);
 };
 
 #endif // VWIDGETDEPENDENCIES_H

@@ -119,9 +119,10 @@ private:
     auto FetchDependenciesForObject(vidtype objectId) const -> QVector<vidtype>;
     auto GetDisplayNameForObject(vidtype objectId) const -> QString; // Fetch display name
     auto GetDisplayToolTipForObject(vidtype objectId) const -> QString;
+    void UpdateNodeNamesRecursive(VDependencyNode *node, const QModelIndex &nodeIndex);
 
     // Smart update helpers
-    void UpdateNodeChildren(VDependencyNode *node, const QVector<vidtype> &newDependencies);
+    void UpdateNodeChildren_r(VDependencyNode *node, const QVector<vidtype> &newDependencies);
     void RemoveChildAt(VDependencyNode *parent, int index);
     void InsertChild(VDependencyNode *parent, int index, vidtype objectId);
 
@@ -129,6 +130,7 @@ private:
     auto GetToolName(vidtype id, const VContainer &patternData, const QString &defaultName) const -> QString;
     auto GetOperationToolName(Tool toolType, const QString &defaultName) const -> QString;
     auto GetToolToolTip(vidtype id) const -> QString;
+    auto GetUnionDetailsToolTip(vidtype id) const -> QString;
     auto GetLineToolName(vidtype id, const QString &defaultName) const -> QString;
 };
 

@@ -29,6 +29,7 @@
 #ifndef VDOMDOCUMENT_H
 #define VDOMDOCUMENT_H
 
+#include <functional>
 #include <QCoreApplication>
 #include <QDomDocument>
 #include <QDomElement>
@@ -41,7 +42,6 @@
 #include <QUuid>
 #include <QtCore/qcontainerfwd.h>
 #include <QtGlobal>
-#include <functional>
 
 #include "../ifcdef.h"
 #include "../qmuparser/qmudef.h"
@@ -50,7 +50,6 @@
 
 class QDomElement;
 class QDomNode;
-template <typename T> class QFutureWatcher;
 
 Q_DECLARE_LOGGING_CATEGORY(vXML)
 
@@ -96,24 +95,28 @@ public:
     static const QString TagLine;
 
     explicit VDomDocument(QObject *parent = nullptr);
-    virtual ~VDomDocument();
+    ~VDomDocument() override = default;
     auto FindElementById(quint32 id, const QString &tagName = QString(), bool updateCache = true) -> QDomElement;
 
-    template <typename T> void SetAttribute(QDomElement &domElement, const QString &name, const T &value) const;
+    template<typename T>
+    void SetAttribute(QDomElement &domElement, const QString &name, const T &value) const;
 
-    template <typename T>
-    void SetAttributeOrRemoveIf(QDomElement &domElement, const QString &name, const T &value,
+    template<typename T>
+    void SetAttributeOrRemoveIf(QDomElement &domElement,
+                                const QString &name,
+                                const T &value,
                                 const std::function<bool(const T &)> &removeCondition) const;
 
     static auto GetParametrUInt(const QDomElement &domElement, const QString &name, const QString &defValue) -> quint32;
     static auto GetParametrInt(const QDomElement &domElement, const QString &name, const QString &defValue) -> int;
     static auto GetParametrBool(const QDomElement &domElement, const QString &name, const QString &defValue) -> bool;
 
-    static auto GetParametrString(const QDomElement &domElement, const QString &name,
+    static auto GetParametrString(const QDomElement &domElement,
+                                  const QString &name,
                                   const QString &defValue = QString()) -> QString;
     static auto GetParametrEmptyString(const QDomElement &domElement, const QString &name) -> QString;
     static auto GetParametrDouble(const QDomElement &domElement, const QString &name, const QString &defValue) -> qreal;
-    static auto GetParametrId(const QDomElement &domElement) -> quint32;
+    static auto GetParametrId(const QDomElement &domElement, const QString &name = VDomDocument::AttrId) -> quint32;
 
     virtual void setXMLContent(const QString &fileName);
     static auto UnitsHelpString() -> QString;
@@ -121,13 +124,13 @@ public:
     auto CreateElementWithText(const QString &tagName, const QString &text) -> QDomElement;
 
     virtual auto SaveDocument(const QString &fileName, QString &error) -> bool;
+    static auto ValidateXMLData(const QString &schema, const QByteArray &data, const QString &fileName, QString &error)
+        -> bool;
     auto Major() const -> QString;
     auto Minor() const -> QString;
     auto Patch() const -> QString;
     virtual auto GetFormatVersionStr() const -> QString;
     static auto GetFormatVersion(const QString &version) -> unsigned;
-    static void RemoveAllChildren(QDomElement &domElement);
-
     auto ParentNodeById(const quint32 &nodeId) -> QDomNode;
     auto CloneNodeById(const quint32 &nodeId) -> QDomElement;
     auto NodeById(const quint32 &nodeId, const QString &tagName = QString()) -> QDomElement;
@@ -140,25 +143,29 @@ public:
     void TestUniqueId() const;
 
     void RefreshElementIdCache();
+    auto MaxRecordedId() const -> quint32;
+    static void RemoveAllChildren(QDomElement &domElement);
+
+    virtual void Clear();
 
 protected:
     auto setTagText(const QString &tag, const QString &text) -> bool;
     auto setTagText(QDomElement &domElement, const QString &text) -> bool;
     auto UniqueTag(const QString &tagName) const -> QDomElement;
     auto UniqueTagText(const QString &tagName, const QString &defVal = QString()) const -> QString;
-    void CollectId(const QDomElement &node, QVector<quint32> &vector) const;
+    void CollectId(const QDomElement &node, QHash<quint32, QDomElement> &ids) const;
 
     static void ValidateVersion(const QString &version);
 
-private slots:
-    void CacheRefreshed();
+    /** @brief Schema to validate the serialized document against before committing a save. Empty means "do not
+     * validate". Subclasses backed by a known XSD should return their current schema. */
+    virtual auto SaveSchema() const -> QString;
 
 private:
     // cppcheck-suppress unknownMacro
     Q_DISABLE_COPY_MOVE(VDomDocument) // NOLINT
     /** @brief Map used for finding element by id. */
-    QHash<quint32, QDomElement> m_elementIdCache;
-    QFutureWatcher<QHash<quint32, QDomElement>> *m_watcher;
+    QHash<quint32, QDomElement> m_elementIdCache{};
 
     static auto find(QHash<quint32, QDomElement> &cache, const QDomElement &node, quint32 id) -> bool;
     auto RefreshCache(const QDomElement &root) const -> QHash<quint32, QDomElement>;
@@ -167,7 +174,7 @@ private:
 };
 
 //---------------------------------------------------------------------------------------------------------------------
-template <typename T>
+template<typename T>
 /**
  * @brief SetAttribute set attribute in pattern file. Replace "," by ".".
  * @param domElement element in xml tree.
@@ -182,54 +189,58 @@ inline void VDomDocument::SetAttribute(QDomElement &domElement, const QString &n
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
-inline void VDomDocument::SetAttribute<QString>(QDomElement &domElement, const QString &name,
-                                                const QString &value) const
+template<>
+inline void VDomDocument::SetAttribute<QString>(QDomElement &domElement, const QString &name, const QString &value) const
 {
     domElement.setAttribute(name, value);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
-inline void VDomDocument::SetAttribute<QLatin1String>(QDomElement &domElement, const QString &name,
+template<>
+inline void VDomDocument::SetAttribute<QLatin1String>(QDomElement &domElement,
+                                                      const QString &name,
                                                       const QLatin1String &value) const
 {
     domElement.setAttribute(name, value);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
+template<>
 inline void VDomDocument::SetAttribute<QUuid>(QDomElement &domElement, const QString &name, const QUuid &value) const
 {
     domElement.setAttribute(name, value.toString());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
+template<>
 inline void VDomDocument::SetAttribute<QChar>(QDomElement &domElement, const QString &name, const QChar &value) const
 {
     domElement.setAttribute(name, value);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
+template<>
 inline void VDomDocument::SetAttribute<bool>(QDomElement &domElement, const QString &name, const bool &value) const
 {
     domElement.setAttribute(name, value ? trueStr : falseStr);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <>
-inline void VDomDocument::SetAttribute<MeasurementsType>(QDomElement &domElement, const QString &name,
+template<>
+inline void VDomDocument::SetAttribute<MeasurementsType>(QDomElement &domElement,
+                                                         const QString &name,
                                                          const MeasurementsType &value) const
 {
-    domElement.setAttribute(name, value == MeasurementsType::Multisize ? QStringLiteral("multisize")
-                                                                       : QStringLiteral("individual"));
+    domElement.setAttribute(name,
+                            value == MeasurementsType::Multisize ? QStringLiteral("multisize")
+                                                                 : QStringLiteral("individual"));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-template <typename T>
-inline void VDomDocument::SetAttributeOrRemoveIf(QDomElement &domElement, const QString &name, const T &value,
+template<typename T>
+inline void VDomDocument::SetAttributeOrRemoveIf(QDomElement &domElement,
+                                                 const QString &name,
+                                                 const T &value,
                                                  const std::function<bool(const T &)> &removeCondition) const
 {
     not removeCondition(value) ? SetAttribute(domElement, name, value) : domElement.removeAttribute(name);

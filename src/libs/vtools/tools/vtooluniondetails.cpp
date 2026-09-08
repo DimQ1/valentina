@@ -400,6 +400,12 @@ auto AddNodePoint(const VPieceNode &node, const VToolUnionDetailsInitData &initD
 
     const quint32 idObject = initData.data->AddGObject(point.release());
     children.append(idObject);
+
+    VPatternGraph *patternGraph = initData.doc->PatternGraph();
+    SCASSERT(patternGraph != nullptr)
+    patternGraph->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                            initData.doc->PatternBlockMapper()->GetActiveId());
+
     point1->setIdObject(idObject);
     point1->setMode(Draw::Modeling);
     const quint32 id = initData.data->AddGObject(point1.release());
@@ -436,6 +442,12 @@ auto AddPin(quint32 id, const VToolUnionDetailsInitData &initData, QVector<quint
 
     const quint32 idObject = initData.data->AddGObject(point.release());
     children.append(idObject);
+
+    VPatternGraph *patternGraphPin = initData.doc->PatternGraph();
+    SCASSERT(patternGraphPin != nullptr)
+    patternGraphPin->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                               initData.doc->PatternBlockMapper()->GetActiveId());
+
     point1->setMode(Draw::Modeling);
     const quint32 idPin = initData.data->AddGObject(point1.release());
 
@@ -487,6 +499,11 @@ auto AddPlaceLabel(quint32 id, const VToolUnionDetailsInitData &initData, QVecto
     initNodeData.centerPoint = initData.data->AddGObject(label.release());
     children.append(initNodeData.centerPoint);
 
+    VPatternGraph *patternGraphLabel = initData.doc->PatternGraph();
+    SCASSERT(patternGraphLabel != nullptr)
+    patternGraphLabel->AddVertex(initNodeData.centerPoint, VNodeType::MODELING_OBJECT,
+                                 initData.doc->PatternBlockMapper()->GetActiveId());
+
     const quint32 idLabel = initData.data->AddGObject(label1.release());
     initNodeData.id = idLabel;
 
@@ -522,10 +539,27 @@ auto AddNodeArc(const VPieceNode &node, const VToolUnionDetailsInitData &initDat
                                        QString().setNum(l1.angle()), l2.angle(), QString().setNum(l2.angle()));
     arc1->setMode(Draw::Modeling);
 
+    // Preserve the source arc's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations set the center point name to "X" which produces a meaningless name like "Arc_X".
+    if (arc1->name() != arc->name())
+    {
+        const QString head = arc1->GetTypeHead();
+        const QString headless = arc->name().startsWith(head) ? Sliced(arc->name(), head.size()) : arc->name();
+        if (!headless.isEmpty())
+        {
+            arc1->SetNameSuffix(headless);
+        }
+    }
+
     auto arc2 = std::make_unique<VArc>(*arc1);
 
     const quint32 idObject = initData.data->AddGObject(arc1.release());
     children.append(idObject);
+
+    VPatternGraph *patternGraphArc = initData.doc->PatternGraph();
+    SCASSERT(patternGraphArc != nullptr)
+    patternGraphArc->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                               initData.doc->PatternBlockMapper()->GetActiveId());
 
     arc2->setIdObject(idObject);
     arc2->setMode(Draw::Modeling);
@@ -574,10 +608,27 @@ auto AddNodeElArc(const VPieceNode &node, const VToolUnionDetailsInitData &initD
         l1.angle(), QString().setNum(l1.angle()), l2.angle(), QString().setNum(l2.angle()), 0, QChar('0'));
     arc1->setMode(Draw::Modeling);
 
+    // Preserve the source arc's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations set the center point name to "X" which produces a meaningless name like "ElArc_X".
+    if (arc1->name() != arc->name())
+    {
+        const QString head = arc1->GetTypeHead();
+        const QString headless = arc->name().startsWith(head) ? Sliced(arc->name(), head.size()) : arc->name();
+        if (!headless.isEmpty())
+        {
+            arc1->SetNameSuffix(headless);
+        }
+    }
+
     auto arc2 = std::make_unique<VEllipticalArc>(*arc1);
 
     const quint32 idObject = initData.data->AddGObject(arc1.release());
     children.append(idObject);
+
+    VPatternGraph *patternGraphElArc = initData.doc->PatternGraph();
+    SCASSERT(patternGraphElArc != nullptr)
+    patternGraphElArc->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                                 initData.doc->PatternBlockMapper()->GetActiveId());
 
     arc2->setIdObject(idObject);
     arc2->setMode(Draw::Modeling);
@@ -620,8 +671,28 @@ auto AddNodeSpline(const VPieceNode &node, const VToolUnionDetailsInitData &init
     }
 
     auto *spl = new VSpline(*p1, static_cast<QPointF>(p2), static_cast<QPointF>(p3), *p4, 0, Draw::Modeling);
+
+    // Preserve the source spline's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations store endpoint VPointF objects with temporary names ("X1", "X4") that would
+    // otherwise produce a meaningless auto-generated name like "Spl_X1_X4".
+    if (spl->name() != spline->name())
+    {
+        const QString head = spl->GetTypeHead();
+        const QString headless =
+            spline->name().startsWith(head) ? Sliced(spline->name(), head.size()) : spline->name();
+        if (!headless.isEmpty())
+        {
+            spl->SetNameSuffix(headless);
+        }
+    }
+
     const quint32 idObject = initData.data->AddGObject(spl);
     children.append(idObject);
+
+    VPatternGraph *patternGraphSpl = initData.doc->PatternGraph();
+    SCASSERT(patternGraphSpl != nullptr)
+    patternGraphSpl->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                               initData.doc->PatternBlockMapper()->GetActiveId());
 
     auto *spl1 = new VSpline(*spl);
     spl1->setIdObject(idObject);
@@ -692,10 +763,30 @@ auto AddNodeSplinePath(const VPieceNode &node, const VToolUnionDetailsInitData &
         path->append(VSplinePoint(*p4, spl.GetEndAngle(), spl.GetEndAngleFormula(), angle2, angle2F,
                                   spline.GetC2Length(), spline.GetC2LengthFormula(), pL2, pL2F));
     }
+
+    // Preserve the source spline path's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations store endpoint VPointF objects with temporary names ("X1", "X4") that would
+    // otherwise produce a meaningless auto-generated name like "SplPath_X1_X4".
+    if (path->name() != splinePath->name())
+    {
+        const QString head = path->GetTypeHead();
+        const QString headless =
+            splinePath->name().startsWith(head) ? Sliced(splinePath->name(), head.size()) : splinePath->name();
+        if (!headless.isEmpty())
+        {
+            path->SetNameSuffix(headless);
+        }
+    }
+
     auto path1 = std::make_unique<VSplinePath>(*path);
 
     const quint32 idObject = initData.data->AddGObject(path.release());
     children.append(idObject);
+
+    VPatternGraph *patternGraphSplPath = initData.doc->PatternGraph();
+    SCASSERT(patternGraphSplPath != nullptr)
+    patternGraphSplPath->AddVertex(idObject, VNodeType::MODELING_OBJECT,
+                                   initData.doc->PatternBlockMapper()->GetActiveId());
 
     path1->setIdObject(idObject);
     path1->setMode(Draw::Modeling);
@@ -730,19 +821,19 @@ void AddNodeToNewPath(const VToolUnionDetailsInitData &initData, VPiecePath &new
     quint32 id = 0;
     switch (node.GetTypeTool())
     {
-        case (Tool::NodePoint):
+        case Tool::NodePoint:
             id = AddNodePoint(node, initData, children, drawName, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeArc):
+        case Tool::NodeArc:
             id = AddNodeArc(node, initData, children, drawName, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeElArc):
+        case Tool::NodeElArc:
             id = AddNodeElArc(node, initData, children, drawName, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeSpline):
+        case Tool::NodeSpline:
             id = AddNodeSpline(node, initData, children, drawName, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeSplinePath):
+        case Tool::NodeSplinePath:
             id = AddNodeSplinePath(node, initData, children, drawName, dx, dy, pRotate, angle);
             break;
         default:
@@ -957,6 +1048,19 @@ void UpdateNodeArc(VContainer *data, const VPieceNode &node, QVector<quint32> &c
     auto arc1 = std::make_unique<VArc>(*center, arc->GetRadius(), arc->GetFormulaRadius(), l1.angle(),
                                        QString().setNum(l1.angle()), l2.angle(), QString().setNum(l2.angle()));
     arc1->setMode(Draw::Modeling);
+
+    // Preserve the source arc's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations set the center point name to "X" which produces a meaningless name like "Arc_X".
+    if (arc1->name() != arc->name())
+    {
+        const QString head = arc1->GetTypeHead();
+        const QString headless = arc->name().startsWith(head) ? Sliced(arc->name(), head.size()) : arc->name();
+        if (!headless.isEmpty())
+        {
+            arc1->SetNameSuffix(headless);
+        }
+    }
+
     data->UpdateGObject(TakeNextId(children), arc1.release());
 }
 
@@ -985,6 +1089,19 @@ void UpdateNodeElArc(VContainer *data, const VPieceNode &node, QVector<quint32> 
         *center, arc->GetRadius1(), arc->GetRadius2(), arc->GetFormulaRadius1(), arc->GetFormulaRadius2(), l1.angle(),
         QString().setNum(l1.angle()), l2.angle(), QString().setNum(l2.angle()), 0, QChar('0'));
     arc1->setMode(Draw::Modeling);
+
+    // Preserve the source arc's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations set the center point name to "X" which produces a meaningless name like "ElArc_X".
+    if (arc1->name() != arc->name())
+    {
+        const QString head = arc1->GetTypeHead();
+        const QString headless = arc->name().startsWith(head) ? Sliced(arc->name(), head.size()) : arc->name();
+        if (!headless.isEmpty())
+        {
+            arc1->SetNameSuffix(headless);
+        }
+    }
+
     data->UpdateGObject(TakeNextId(children), arc1.release());
 }
 
@@ -1011,6 +1128,21 @@ void UpdateNodeSpline(VContainer *data, const VPieceNode &node, QVector<quint32>
 
     auto spl =
         std::make_unique<VSpline>(*p1, static_cast<QPointF>(p2), static_cast<QPointF>(p3), *p4, 0U, Draw::Modeling);
+
+    // Preserve the source spline's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations store endpoint VPointF objects with temporary names ("X1", "X4") that would
+    // otherwise produce a meaningless auto-generated name like "Spl_X1_X4".
+    if (spl->name() != spline->name())
+    {
+        const QString head = spl->GetTypeHead();
+        const QString headless =
+            spline->name().startsWith(head) ? Sliced(spline->name(), head.size()) : spline->name();
+        if (!headless.isEmpty())
+        {
+            spl->SetNameSuffix(headless);
+        }
+    }
+
     data->UpdateGObject(TakeNextId(children), spl.release());
 }
 
@@ -1067,6 +1199,21 @@ void UpdateNodeSplinePath(VContainer *data, const VPieceNode &node, QVector<quin
         path->append(VSplinePoint(*p4, spl.GetEndAngle(), spl.GetEndAngleFormula(), angle2, angle2F,
                                   spline.GetC2Length(), spline.GetC2LengthFormula(), pL2, pL2F));
     }
+
+    // Preserve the source spline path's name when it was explicitly set (e.g., after flip/rotate/move operations),
+    // because those operations store endpoint VPointF objects with temporary names ("X1", "X4") that would
+    // otherwise produce a meaningless auto-generated name like "SplPath_X1_X4".
+    if (path->name() != splinePath->name())
+    {
+        const QString head = path->GetTypeHead();
+        const QString headless =
+            splinePath->name().startsWith(head) ? Sliced(splinePath->name(), head.size()) : splinePath->name();
+        if (!headless.isEmpty())
+        {
+            path->SetNameSuffix(headless);
+        }
+    }
+
     data->UpdateGObject(TakeNextId(children), path.release());
 }
 
@@ -1088,19 +1235,19 @@ void UpdatePathNode(VContainer *data, const VPieceNode &node, QVector<quint32> &
 {
     switch (node.GetTypeTool())
     {
-        case (Tool::NodePoint):
+        case Tool::NodePoint:
             UpdateNodePoint(data, node, children, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeArc):
+        case Tool::NodeArc:
             UpdateNodeArc(data, node, children, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeElArc):
+        case Tool::NodeElArc:
             UpdateNodeElArc(data, node, children, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeSpline):
+        case Tool::NodeSpline:
             UpdateNodeSpline(data, node, children, dx, dy, pRotate, angle);
             break;
-        case (Tool::NodeSplinePath):
+        case Tool::NodeSplinePath:
             UpdateNodeSplinePath(data, node, children, dx, dy, pRotate, angle);
             break;
         default:
@@ -1151,7 +1298,6 @@ void CreateUnitedNodes(VPiece &newDetail, const VPiece &d1, const VPiece &d2, co
 
     for (auto child : std::as_const(children))
     {
-        patternGraph->AddVertex(child, VNodeType::MODELING_OBJECT, initData.doc->PatternBlockMapper()->GetActiveId());
         patternGraph->AddEdge(initData.id, child);
     }
 
@@ -1218,7 +1364,6 @@ void CreateUnitedCSA(VPiece &newDetail, const VPiece &d1, const VPiece &d2, cons
 
     for (auto child : std::as_const(children))
     {
-        patternGraph->AddVertex(child, VNodeType::MODELING_OBJECT, initData.doc->PatternBlockMapper()->GetActiveId());
         patternGraph->AddEdge(initData.id, child);
     }
 }
@@ -1284,7 +1429,6 @@ void CreateUnitedInternalPaths(VPiece &newDetail, const VPiece &d1, const VPiece
 
     for (auto child : std::as_const(children))
     {
-        patternGraph->AddVertex(child, VNodeType::MODELING_OBJECT, initData.doc->PatternBlockMapper()->GetActiveId());
         patternGraph->AddEdge(initData.id, child);
     }
 }
@@ -1346,7 +1490,6 @@ void CreateUnitedPins(VPiece &newDetail, const VPiece &d1, const VPiece &d2, con
 
     for (auto child : std::as_const(children))
     {
-        patternGraph->AddVertex(child, VNodeType::MODELING_OBJECT, initData.doc->PatternBlockMapper()->GetActiveId());
         patternGraph->AddEdge(initData.id, child);
     }
 }
@@ -1371,7 +1514,6 @@ void CreateUnitedPlaceLabels(VPiece &newDetail, const VPiece &d1, const VPiece &
 
     for (auto child : std::as_const(children))
     {
-        patternGraph->AddVertex(child, VNodeType::MODELING_OBJECT, initData.doc->PatternBlockMapper()->GetActiveId());
         patternGraph->AddEdge(initData.id, child);
     }
 }
@@ -1493,6 +1635,10 @@ auto FixChildren(QVector<quint32> records, QVector<quint32> children, VContainer
                     fixedChildren.append(children.takeAt(childrenIndex));
                 }
             }
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -1698,7 +1844,7 @@ void CreateUnitedDetail(const VToolUnionDetailsInitData &initData, qreal dx, qre
         initPieceData.typeCreation = Source::FromGui;
         initPieceData.drawName = initData.doc->PieceDrawName(id);
 
-        VContainer toolData = VAbstractPattern::getTool(id)->getData();
+        VContainer toolData = VAbstractPattern::getTool(id)->GetDataCopy();
         initPieceData.data = &toolData;
 
         initPieceData.detail = initData.data->GetPiece(id);

@@ -37,7 +37,6 @@
 #include <QKeyEvent>
 #include <QList>
 #include <QMessageLogger>
-#include <QPalette>
 #include <QPoint>
 #include <QPolygonF>
 #include <QRectF>
@@ -89,10 +88,7 @@ void VGraphicsSimpleTextItem::paint(QPainter *painter, const QStyleOptionGraphic
 void VGraphicsSimpleTextItem::SetEnabledState(bool enabled)
 {
     QGraphicsSimpleTextItem::setEnabled(enabled);
-    if (scene() != nullptr)
-    {
-        setBrush(scene()->palette().brush(enabled ? QPalette::Active : QPalette::Disabled, QPalette::Text));
-    }
+    RefreshColor();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -218,6 +214,7 @@ void VGraphicsSimpleTextItem::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
 
     m_hoverFlag = true;
     RefreshColor();
+    emit LabelHovered(true);
 
     if (QGraphicsItem const *parent = parentItem(); (parent != nullptr) && m_showParentTooltip)
     {
@@ -225,6 +222,8 @@ void VGraphicsSimpleTextItem::hoverEnterEvent(QGraphicsSceneHoverEvent *event)
     }
 
     QGraphicsSimpleTextItem::hoverEnterEvent(event);
+
+    emit HoverCurve(true);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -236,7 +235,10 @@ void VGraphicsSimpleTextItem::hoverLeaveEvent(QGraphicsSceneHoverEvent *event)
 {
     m_hoverFlag = false;
     RefreshColor();
+    emit LabelHovered(false);
     QGraphicsSimpleTextItem::hoverLeaveEvent(event);
+
+    emit HoverCurve(false);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -315,24 +317,22 @@ void VGraphicsSimpleTextItem::keyReleaseEvent(QKeyEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void VGraphicsSimpleTextItem::UpdateFontSize(int size)
 {
-    QFont font = this->font();
-    if (font.pointSize() != size)
+    const int adjusted = qMax(qRound(size * m_fontAdjustRatio), static_cast<int>(minVisibleFontSize));
+
+    if (QFont font = this->font(); font.pointSize() != adjusted)
     {
-        font.setPointSize(qMax(size, static_cast<int>(minVisibleFontSize)));
+        font.setPointSize(adjusted);
         setFont(font);
+        emit UpdateLine();
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VGraphicsSimpleTextItem::RefreshColor()
 {
-    if (const QBrush newBrush = !isEnabled() && scene() != nullptr
-                                    ? scene()->palette().brush(QPalette::Disabled, QPalette::Text)
-                                    : VSceneStylesheet::Color(m_hoverFlag ? m_textHoverColor : m_textColor);
-        brush() != newBrush)
-    {
-        setBrush(newBrush);
-    }
+    const QColor color = VSceneStylesheet::Color(m_hoverFlag ? m_textHoverColor : m_textColor);
+    setBrush(VSceneStylesheet::CorrectToolColor(this, color));
+    update();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -384,16 +384,12 @@ void VGraphicsSimpleTextItem::Init()
             this,
             &VGraphicsSimpleTextItem::UpdateFontSize);
     connect(VTheme::Instance(), &VTheme::ThemeSettingsChanged, this, [this]() -> void { RefreshColor(); });
-    connect(
-        this,
-        &VGraphicsSimpleTextItem::UpdateLine,
-        this,
-        [this]() -> void
-        {
-            if (auto *parent = dynamic_cast<VScenePoint *>(parentItem()))
-            {
-                parent->RefreshLine();
-            }
-        },
-        Qt::QueuedConnection);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VGraphicsSimpleTextItem::SetFontAdjustRatio(qreal ration)
+{
+    m_fontAdjustRatio = ration;
+
+    UpdateFontSize(font().pointSize());
 }

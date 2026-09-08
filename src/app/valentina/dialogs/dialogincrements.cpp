@@ -43,6 +43,7 @@
 #include "../vpatterndb/variables/vlinelength.h"
 #include "../vpatterndb/vtranslatevars.h"
 #include "../vtools/dialogs/support/dialogeditwrongformula.h"
+#include "../vwidgets/vscrollablemenu.h"
 #include "dialogincrementscsvcolumns.h"
 #include "ui_dialogincrements.h"
 
@@ -118,8 +119,8 @@ DialogIncrements::DialogIncrements(VContainer *data, VPattern *doc, QWidget *par
     m_data(data),
     m_patternDoc(doc),
     m_completeData(doc->GetCompleteData()),
-    m_searchHistory(new QMenu(this)),
-    m_searchHistoryPC(new QMenu(this))
+    m_searchHistory(new VScrollableMenu(this)),
+    m_searchHistoryPC(new VScrollableMenu(this))
 {
     ui->setupUi(this);
 
@@ -1187,9 +1188,6 @@ void DialogIncrements::InitSearch()
                 m_searchPC->Find(ui->lineEditFindPC->text());
             });
 
-    m_searchHistory->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
-    m_searchHistoryPC->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
-
     InitIncrementsSearchHistory();
     InitPreviewCalculationsSearchHistory();
 
@@ -1209,18 +1207,18 @@ void DialogIncrements::InitIncrementsSearchHistory()
 {
     QStringList const searchHistory =
         VAbstractValApplication::VApp()->ValentinaSettings()->GetIncrementsSearchHistory();
-    m_searchHistory->clear();
+    m_searchHistory->Clear();
 
     if (searchHistory.isEmpty())
     {
-        QAction *action = m_searchHistory->addAction('<'_L1 + tr("Empty", "list") + '>'_L1);
+        QAction *action = m_searchHistory->AddAction('<'_L1 + tr("Empty", "list") + '>'_L1);
         action->setDisabled(true);
         return;
     }
 
     for (const auto &term : searchHistory)
     {
-        QAction *action = m_searchHistory->addAction(term);
+        QAction *action = m_searchHistory->AddAction(term);
         action->setData(term);
         connect(action, &QAction::triggered, this,
                 [this]()
@@ -1242,18 +1240,18 @@ void DialogIncrements::InitPreviewCalculationsSearchHistory()
 {
     QStringList const searchHistory =
         VAbstractValApplication::VApp()->ValentinaSettings()->GetPreviewCalculationsSearchHistory();
-    m_searchHistoryPC->clear();
+    m_searchHistoryPC->Clear();
 
     if (searchHistory.isEmpty())
     {
-        QAction *action = m_searchHistoryPC->addAction('<'_L1 + tr("Empty", "list") + '>'_L1);
+        QAction *action = m_searchHistoryPC->AddAction('<'_L1 + tr("Empty", "list") + '>'_L1);
         action->setDisabled(true);
         return;
     }
 
     for (const auto &term : searchHistory)
     {
-        QAction *action = m_searchHistoryPC->addAction(term);
+        QAction *action = m_searchHistoryPC->AddAction(term);
         action->setData(term);
         connect(action, &QAction::triggered, this,
                 [this]()

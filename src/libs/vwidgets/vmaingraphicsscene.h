@@ -37,7 +37,6 @@
 #include <QRectF>
 #include <QString>
 #include <QTransform>
-#include <QVector>
 #include <QtGlobal>
 
 #include "../vmisc/def.h"
@@ -61,8 +60,8 @@ public:
     auto getScenePos() const -> QPointF;
 
     auto VisibleItemsBoundingRect() const -> QRectF;
-    void          InitOrigins();
-    void          SetOriginsVisible(bool visible);
+    void InitOrigins();
+    void SetOriginsVisible(bool visible) const;
 
     auto IsNonInteractive() const -> bool;
     void          SetNonInteractive(bool nonInteractive);
@@ -100,6 +99,12 @@ public slots:
     void          ToggleNodeLabelHover(bool enabled);
     void          ToggleNodePointHover(bool enabled);
     void          ToggleDetailHover(bool enabled);
+
+    void ToggleArcSegmentVisibility(bool visible);
+    void ToggleElArcSegmentVisibility(bool visible);
+    void ToggleSplineSegmentVisibility(bool visible);
+    void ToggleSplinePathSegmentVisibility(bool visible);
+
 protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
@@ -156,6 +161,11 @@ signals:
     void          DimensionsChanged();
     void          LanguageChanged();
 
+    void ShowArcSegmentLabel(bool show);
+    void ShowElArcSegmentLabel(bool show);
+    void ShowSplineSegmentLabel(bool show);
+    void ShowSplinePathSegmentLabel(bool show);
+
 private:
     Q_DISABLE_COPY_MOVE(VMainGraphicsScene) // NOLINT
     /** @brief horScrollBar value horizontal scroll bar. */
@@ -167,7 +177,6 @@ private:
     /** @brief _transform view transform value. */
     QTransform    _transform;
     QPointF       scenePos;
-    QVector<QGraphicsItem *> origins;
 
     /** @brief m_nonInteractive all item on scene in non interactive. */
     bool          m_nonInteractive{false};

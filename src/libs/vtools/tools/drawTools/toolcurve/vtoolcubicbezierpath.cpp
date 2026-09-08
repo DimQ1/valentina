@@ -156,7 +156,7 @@ auto VToolCubicBezierPath::Create(VToolCubicBezierPathInitData initData) -> VToo
 //---------------------------------------------------------------------------------------------------------------------
 void VToolCubicBezierPath::UpdatePathPoints(VAbstractPattern *doc, QDomElement &element, const VCubicBezierPath &path)
 {
-    VDomDocument::RemoveAllChildren(element);
+    VAbstractPattern::RemoveAllChildren(element);
     for (qint32 i = 0; i < path.CountPoints(); ++i)
     {
         AddPathPoint(doc, element, path.at(i));
@@ -292,5 +292,6 @@ auto VToolCubicBezierPath::GatherToolChanges() const -> VToolAbstractBezier::Too
             .oldP4Label = oldCurve->LastPoint().name(),
             .newP4Label = newCurve.LastPoint().name(),
             .oldAliasSuffix = oldCurve->GetAliasSuffix(),
-            .newAliasSuffix = newCurve.GetAliasSuffix()};
+            .newAliasSuffix = newCurve.GetAliasSuffix(),
+            .newDuplicate = newCurve.GetDuplicate()};
 }

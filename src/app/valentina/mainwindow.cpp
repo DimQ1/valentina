@@ -30,12 +30,15 @@
 
 #include <QAction>
 #include <QComboBox>
+#include <QPointer>
 #include <QDesktopServices>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QEventLoop>
 #include <QFuture>
+#include <QFutureWatcher>
 #include <QGlobalStatic>
 #include <QImageReader>
 #include <QInputDialog>
@@ -54,6 +57,7 @@
 #include <QtDebug>
 #include <QtGlobal>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <thread>
 
@@ -86,7 +90,9 @@
 #include "../vmisc/vmodifierkey.h"
 #include "../vmisc/vsysexits.h"
 #include "../vmisc/vvalentinasettings.h"
+#include "../vmisc/vasyncfileio.h"
 #include "../vmisc/vfontinstaller.h"
+#include "../vmisc/projectversion.h"
 #include "../vmisc/dialogs/dialogselectmeasurementstype.h"
 #include "../vpatterndb/variables/vincrement.h"
 #include "../vpatterndb/variables/vmeasurement.h"
@@ -180,8 +186,20 @@
 #include "../vtools/undocommands/image/deletebackgroundimage.h"
 #include "../vtools/undocommands/renamepp.h"
 #include "../vtools/undocommands/undogroup.h"
+#include "../vtools/undocommands/label/movedoublelabel.h"
+#include "../vtools/undocommands/label/movelabel.h"
+#include "../vtools/undocommands/label/movesegmentlabel.h"
+#include "../vtools/undocommands/label/operationmovelabel.h"
+#include "../vwidgets/vabstractsimple.h"
 #include "../vwidgets/vgraphicssimpletextitem.h"
+#include "../vwidgets/labelarrange/vdrawlabelcollector.h"
+#include "../vwidgets/labelarrange/vlabelarrangeengine.h"
 #include "../vwidgets/vmaingraphicsscene.h"
+#include "../vwidgets/vscenepoint.h"
+#include "../vwidgets/vsegmentlabel.h"
+#include "../vwidgets/vsimplecurve.h"
+#include "../vwidgets/vsimplepoint.h"
+#include "../vtools/tools/vabstracttool.h"
 #include "../vwidgets/vtoolbuttonpopup.h"
 #include "../vwidgets/vwidgetpopup.h"
 #include "core/vapplication.h"
@@ -278,7 +296,7 @@ void LogPatternToolUsed(bool checked, const QString &toolName)
     if (checked)
     {
         VValentinaSettings  const*settings = VAbstractValApplication::VApp()->ValentinaSettings();
-        if (settings->IsCollectStatistic())
+        if (VApplication::IsGUIMode() && settings->IsCollectStatistic())
         {
             auto *statistic = VGAnalytics::Instance();
 
@@ -363,6 +381,139 @@ void WarningNotUniquePieceName(const QHash<quint32, VPiece> *allDetails)
     }
 }
 
+/**
+ * @brief Resolves the cursor resource path, preferring a HiDPI variant when
+ *        the device pixel ratio is >= 2 and the @2x asset exists.
+ * @param resource  The Qt resource prefix (e.g. "toolcursor").
+ * @param cursor    The base cursor filename (e.g. "arrow.png").
+ * @return Absolute resource path to use for QPixmap construction.
+ */
+auto ResolveToolCursorResource(const QString &resource, const QString &cursor) -> QString
+{
+    auto cursorResource = VTheme::GetResourceName(resource, cursor);
+
+    if (qApp->devicePixelRatio() >= 2) // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+    {
+        const auto hiDPICursor = QString(cursor).replace(".png"_L1, "@2x.png"_L1);
+        const auto hiDPIResource = VTheme::GetResourceName(resource, hiDPICursor);
+        if (QFileInfo::exists(hiDPIResource))
+        {
+            cursorResource = hiDPIResource;
+        }
+    }
+
+    return cursorResource;
+}
+//---------------------------------------------------------------------------------------------------------------------
+using TriggerFn = std::function<void()>;
+
+//---------------------------------------------------------------------------------------------------------------------
+// Returns the effective target for rubber band hit-testing, or nullptr to skip the item.
+auto ResolveRubberBandTarget(const QGraphicsItem *item) -> QGraphicsItem *
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    auto *target = const_cast<QGraphicsItem *>(item);
+
+    // Redirect label text items to their parent
+    if (item->type() == VGraphicsSimpleTextItem::Type)
+    {
+        target = item->parentItem();
+        if (target == nullptr)
+        {
+            return nullptr;
+        }
+    }
+
+    // Skip leader lines and other non-selectable VSegmentLabel children.
+    // The text label is already redirected to VSegmentLabel above; anything
+    // else whose parent is a VSegmentLabel (e.g. VScaledLine leader line)
+    // must not trigger selection.
+    if (target->type() != VSimplePoint::Type && target->type() != VSimpleCurve::Type &&
+        target->type() != VSegmentLabel::Type)
+    {
+        if (QGraphicsItem const *parent = target->parentItem();
+            parent != nullptr && parent->type() == VSegmentLabel::Type)
+        {
+            return nullptr;
+        }
+    }
+
+    return target;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// Returns the (id, trigger) pair for a resolved rubber band target, or {NULL_ID, {}} to skip.
+auto MakeRubberBandEntry(QGraphicsItem *target) -> std::pair<quint32, TriggerFn>
+{
+    if (target->type() == VSimplePoint::Type || target->type() == VSimpleCurve::Type)
+    {
+        auto *simple = dynamic_cast<VAbstractSimple *>(target);
+        if (simple == nullptr)
+        {
+            return {};
+        }
+        QPointer<VAbstractSimple> const ptr(simple);
+        return {simple->GetId(), [ptr]() -> void { if (ptr) { ptr->TriggerChoosed(); } }};
+    }
+
+    if (target->type() == VSegmentLabel::Type)
+    {
+        auto *segLabel = static_cast<VSegmentLabel *>(target);
+        QPointer<VSegmentLabel> const ptr(segLabel);
+        return {segLabel->GetSegmentId(), [ptr]() -> void { if (ptr) { ptr->TriggerChoosed(); } }};
+    }
+
+    if (auto *tool = dynamic_cast<VAbstractTool *>(target))
+    {
+        QPointer<VAbstractTool> const ptr(tool);
+        return {tool->getId(), [ptr]() -> void { if (ptr) { ptr->TriggerChoosed(); } }};
+    }
+
+    return {};
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void HandleRubberBandSelection(const VMainGraphicsScene *scene, const QRectF &sceneRect,
+                               const std::shared_ptr<QMap<quint32, TriggerFn>> &prevBandTriggers)
+{
+    QMap<quint32, TriggerFn> currentTriggers;
+
+    for (QGraphicsItem const*item : scene->items(sceneRect, Qt::IntersectsItemShape))
+    {
+        QGraphicsItem *target = ResolveRubberBandTarget(item);
+        if (target == nullptr)
+        {
+            continue;
+        }
+
+        auto [id, trigger] = MakeRubberBandEntry(target);
+        if (id != NULL_ID && not currentTriggers.contains(id))
+        {
+            currentTriggers.insert(id, trigger);
+        }
+    }
+
+    // Fire trigger for items newly entering the rubber band
+    for (auto it = currentTriggers.cbegin(); it != currentTriggers.cend(); ++it)
+    {
+        if (not prevBandTriggers->contains(it.key()))
+        {
+            it.value()();
+        }
+    }
+
+    // Fire trigger for items that left the rubber band (toggles them back off)
+    for (auto it = prevBandTriggers->cbegin(); it != prevBandTriggers->cend(); ++it)
+    {
+        if (not currentTriggers.contains(it.key()))
+        {
+            it.value()();
+        }
+    }
+
+    *prevBandTriggers = std::move(currentTriggers);
+}
+
 } // anonymous namespace
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -388,7 +539,7 @@ MainWindow::MainWindow(QWidget *parent)
     doc = new VPattern(pattern, m_sceneDraw, m_sceneDetails);
     connect(doc, &VPattern::ClearMainWindow, this, &MainWindow::Clear);
     connect(doc, &VPattern::patternChanged, this, &MainWindow::PatternChangesWereSaved);
-    connect(doc, &VPattern::UndoCommand, this, &MainWindow::FullParseFile);
+    connect(doc, &VPattern::UndoCommand, this, &MainWindow::FullParseFile, Qt::QueuedConnection);
     connect(doc, &VPattern::SetEnabledGUI, this, &MainWindow::SetEnabledGUI);
     connect(doc, &VPattern::CheckLayout, this,
             [this]()
@@ -415,6 +566,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionExportFontCorrections, &QAction::triggered, this, &MainWindow::ActionExportFontCorrections);
     connect(ui->actionInstallSingleLineFont, &QAction::triggered, this, &MainWindow::ActionInstallSingleLineFont);
     connect(ui->actionReloadLabels, &QAction::triggered, this, &MainWindow::ActionReloadLabels);
+    connect(ui->actionAutoArrangeLabels, &QAction::triggered, this, &MainWindow::RunAutoArrangeLabels);
 
     m_progressBar->setVisible(false);
 #if defined(Q_OS_WIN32) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -442,29 +594,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &MainWindow::MeasurementsChanged);
 
     m_measurementsSyncTimer->setTimerType(Qt::VeryCoarseTimer);
-    connect(m_measurementsSyncTimer, &QTimer::timeout, this,
-            [this]()
-            {
-                if (isActiveWindow())
-                {
-                    static bool asking = false;
-                    if (not asking && m_mChanges && not m_mChangesAsked)
-                    {
-                        asking = true;
-                        m_mChangesAsked = true;
-                        m_measurementsSyncTimer->stop();
-                        if (const auto answer = QMessageBox::question(
-                                this, tr("Measurements"),
-                                tr("Measurements were changed. Do you want to sync measurements now?"),
-                                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-                            answer == QMessageBox::Yes)
-                        {
-                            SyncMeasurements();
-                        }
-                        asking = false;
-                    }
-                }
-            });
+    connect(m_measurementsSyncTimer, &QTimer::timeout, this, &MainWindow::MeasurementsSyncTimerTimeout);
 
 #if defined(Q_OS_MAC)
     // On Mac deafault icon size is 32x32.
@@ -560,6 +690,29 @@ MainWindow::MainWindow(QWidget *parent)
         connect(manager, &VAbstractShortcutManager::ShortcutsUpdated, this, &MainWindow::UpdateShortcuts);
         UpdateShortcuts();
     }
+
+    // File save/copy operations already exclude user input while in flight (VAsyncFileIO::RunFileOperation);
+    // reuse the same status-bar progress bar and setEnabled(false) already used for pattern parsing and label
+    // arranging (see FullParseFile() and RunAutoArrangeLabels()), instead of popping a second, visually
+    // inconsistent modal dialog - VAsyncFileIO's own fallback for apps with no such widget (Tape, Puzzle).
+    VAsyncFileIO::SetBusyIndicatorHandler(
+        [this](bool busy, const QString & /*description*/)
+        {
+            if (busy)
+            {
+                m_progressBar->setRange(0, 0); // indeterminate spinner
+                m_progressBar->setValue(0);
+                m_statusLabel->setVisible(false);
+                m_progressBar->setVisible(true);
+                setEnabled(false);
+            }
+            else
+            {
+                setEnabled(true);
+                m_progressBar->setVisible(false);
+                m_statusLabel->setVisible(true);
+            }
+        });
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -667,6 +820,12 @@ void MainWindow::InitScenes()
     connect(this, &MainWindow::EnableSplineHover, m_sceneDraw, &VMainGraphicsScene::ToggleSplineHover);
     connect(this, &MainWindow::EnableSplinePathHover, m_sceneDraw, &VMainGraphicsScene::ToggleSplinePathHover);
 
+    connect(this, &MainWindow::ShowArcSegmentLabel, m_sceneDraw, &VMainGraphicsScene::ToggleArcSegmentVisibility);
+    connect(this, &MainWindow::ShowElArcSegmentLabel, m_sceneDraw, &VMainGraphicsScene::ToggleElArcSegmentVisibility);
+    connect(this, &MainWindow::ShowSplineSegmentLabel, m_sceneDraw, &VMainGraphicsScene::ToggleSplineSegmentVisibility);
+    connect(this, &MainWindow::ShowSplinePathSegmentLabel, m_sceneDraw,
+            &VMainGraphicsScene::ToggleSplinePathSegmentVisibility);
+
     connect(m_sceneDraw, &VMainGraphicsScene::mouseMove, this, &MainWindow::MouseMove);
     connect(m_sceneDraw, &VMainGraphicsScene::AddBackgroundImage, this, &MainWindow::PlaceBackgroundImage);
 
@@ -690,7 +849,30 @@ void MainWindow::InitScenes()
 
     connect(ui->view, &VMainGraphicsView::MouseRelease, this, [this]() -> void { EndVisualization(true); });
     connect(ui->view, &VMainGraphicsView::ScaleChanged, this, &MainWindow::ScaleChanged);
-    connect(ui->view, &VMainGraphicsView::ZoomFitBestCurrent, this, [this]() -> void { ZoomFitBestCurrent(); });
+    connect(ui->view, &VMainGraphicsView::ZoomFitBestCurrent, this, &MainWindow::ZoomFitBestCurrent,
+            Qt::QueuedConnection);
+    // Shared state: stores a trigger function per item while it's inside the rubber band.
+    // QPointer ensures we don't call into deleted objects.
+    auto prevBandTriggers = std::make_shared<QMap<quint32, TriggerFn>>();
+
+    connect(ui->view, &VMainGraphicsView::RubberBandSelection, this,
+            [this, prevBandTriggers](const QRectF &sceneRect) -> void
+            {
+                HandleRubberBandSelection(m_sceneDraw, sceneRect, prevBandTriggers);
+            });
+
+    connect(ui->view, &VMainGraphicsView::RubberBandSelectionStarted, this,
+            [this]() -> void
+            {
+                if (m_dialogTool)
+                {
+                    m_dialogTool->ClearSourceObjects();
+                }
+            });
+
+    connect(ui->view, &VMainGraphicsView::RubberBandSelectionFinished, this,
+            [prevBandTriggers]() -> void { prevBandTriggers->clear(); });
+    connect(ui->view, &VMainGraphicsView::SceneContextMenuRequested, this, &MainWindow::AutoArrangeLabels);
     QSizePolicy policy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     policy.setHorizontalStretch(12);
     ui->view->setSizePolicy(policy);
@@ -754,15 +936,16 @@ auto MainWindow::UpdateMeasurements(const QString &patternPath, QString &path, q
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto MainWindow::UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, qreal baseA, qreal baseB, qreal baseC)
-    -> bool
+auto MainWindow::UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, qreal baseA, qreal baseB, qreal baseC,
+                                    bool rebuildGradation) -> bool
 {
-    m_m = mFile;
-
-    if (m_m.isNull())
+    if (mFile.isNull())
     {
+        qCWarning(vMainWindow, "UpdateMeasurements called with null measurement file; keeping existing data.");
         return false;
     }
+
+    m_m = mFile;
 
     if (VAbstractValApplication::VApp()->GetMeasurementsType() != m_m->Type())
     {
@@ -776,7 +959,7 @@ auto MainWindow::UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, 
 
     try
     {
-        ReadMeasurements(baseA, baseB, baseC);
+        ReadMeasurements(baseA, baseB, baseC, rebuildGradation);
     }
     catch (VExceptionEmptyParameter &e)
     {
@@ -793,11 +976,14 @@ auto MainWindow::UpdateMeasurements(const QSharedPointer<VMeasurements> &mFile, 
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void MainWindow::ReadMeasurements(qreal baseA, qreal baseB, qreal baseC)
+void MainWindow::ReadMeasurements(qreal baseA, qreal baseB, qreal baseC, bool rebuildGradation)
 {
     pattern->ClearVariables({VarType::Measurement, VarType::MeasurementSeparator});
 
-    if (not m_m->Dimensions().isEmpty())
+    // Rebuilding the dimension labels and gradation combo boxes is only needed when the measurement
+    // file itself (re)loads. On a plain size switch the gradation lists are unchanged and rebuilding
+    // them (with per-item QFontMetrics work) is redundant synchronous UI work on the hot path.
+    if (rebuildGradation && not m_m->Dimensions().isEmpty())
     {
         const QList<MeasurementDimension_p> dimensions = m_m->Dimensions().values();
 
@@ -868,114 +1054,109 @@ template <typename Dialog, typename Func>
 void MainWindow::SetToolButton(bool checked, Tool t, const QString &cursor, const QString &toolTip,
                                Func closeDialogSlot)
 {
-    if (checked)
-    {
-        CancelTool();
-        emit EnableItemMove(false);
-        m_currentTool = m_lastUsedTool = t;
-
-        if (const VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
-            settings->GetPointerMode() == VToolPointerMode::ToolIcon)
-        {
-            const auto resource = QStringLiteral("toolcursor");
-            auto cursorResource = VTheme::GetResourceName(resource, cursor);
-            if (qApp->devicePixelRatio() >= 2) // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
-            {
-                // Try to load HiDPI versions of the cursors if availible
-                auto hiDPICursor = QString(cursor).replace(".png"_L1, "@2x.png"_L1);
-                auto cursorHiDPIResource = VTheme::GetResourceName(resource, hiDPICursor);
-                if (QFileInfo::exists(cursorHiDPIResource))
-                {
-                    cursorResource = cursorHiDPIResource;
-                }
-            }
-            QPixmap const pixmap(cursorResource);
-            QCursor const cur(pixmap, 2, 2);
-            ui->view->viewport()->setCursor(cur);
-            ui->view->setCurrentCursorShape(); // Hack to fix problem with a cursor
-        }
-
-        m_statusLabel->setText(toolTip);
-        ui->view->setShowToolOptions(false);
-        auto *dialogTool = new Dialog(pattern, doc, 0, this);
-
-        // This check helps to find missed tools in the switch
-        Q_STATIC_ASSERT_X(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64, "Check if need to extend.");
-
-        switch (t)
-        {
-            case Tool::ArcStart:
-            case Tool::ArcEnd:
-            case Tool::Midpoint:
-                dialogTool->Build(t);
-                break;
-            case Tool::PiecePath:
-            case Tool::Pin:
-            case Tool::InsertNode:
-            case Tool::PlaceLabel:
-                dialogTool->SetPiecesList(doc->GetActivePPPieces());
-                break;
-            case Tool::Rotation:
-            case Tool::Move:
-            case Tool::FlippingByAxis:
-            case Tool::FlippingByLine:
-            case Tool::Group:
-                dialogTool->SetGroupCategories(doc->GetGroupCategories());
-                break;
-            case Tool::Piece:
-                dialogTool->SetPatternDoc(doc);
-                break;
-            default:
-                break;
-        }
-
-        VValentinaSettings  const*settings = VApplication::VApp()->ValentinaSettings();
-
-        if constexpr (std::is_same_v<Dialog,DialogEndLine> || std::is_same_v<Dialog,DialogAlongLine> ||
-                      std::is_same_v<Dialog,DialogBisector> || std::is_same_v<Dialog,DialogCurveIntersectAxis> ||
-                      std::is_same_v<Dialog,DialogHeight> || std::is_same_v<Dialog,DialogLine> ||
-                      std::is_same_v<Dialog,DialogLineIntersectAxis> || std::is_same_v<Dialog,DialogNormal> ||
-                      std::is_same_v<Dialog,DialogShoulderPoint>)
-        {
-            dialogTool->SetTypeLine(settings->GetGlobalPenStyle());
-            dialogTool->SetLineColor(settings->GetGlobalToolColor());
-        }
-
-        if constexpr (std::is_same_v<Dialog,DialogArc> || std::is_same_v<Dialog,DialogArcWithLength> ||
-                      std::is_same_v<Dialog,DialogEllipticalArc> ||
-                      std::is_same_v<Dialog,DialogEllipticalArcWithLength> ||
-                      std::is_same_v<Dialog,DialogParallelCurve> || std::is_same_v<Dialog,DialogGraduatedCurve>)
-        {
-            dialogTool->SetPenStyle(settings->GetGlobalPenStyle());
-            dialogTool->SetColor(settings->GetGlobalToolColor());
-        }
-
-        if constexpr (std::is_same_v<Dialog,DialogCubicBezier> || std::is_same_v<Dialog,DialogCubicBezierPath> ||
-                      std::is_same_v<Dialog,DialogSpline> || std::is_same_v<Dialog,DialogSplinePath>)
-        {
-            dialogTool->SetDefPenStyle(settings->GetGlobalPenStyle());
-            dialogTool->SetDefColor(settings->GetGlobalToolColor());
-        }
-
-        auto *scene = qobject_cast<VMainGraphicsScene *>(currentScene);
-        SCASSERT(scene != nullptr)
-
-        m_dialogTool = dialogTool;
-
-        connect(scene, &VMainGraphicsScene::ChoosedObject, m_dialogTool.data(), &DialogTool::ChosenObject);
-        connect(scene, &VMainGraphicsScene::SelectedObject, m_dialogTool.data(), &DialogTool::SelectedObject);
-        connect(m_dialogTool.data(), &DialogTool::DialogClosed, this, closeDialogSlot);
-        connect(m_dialogTool.data(), &DialogTool::ToolTip, this, &MainWindow::ShowToolTip);
-        connect(m_dialogTool.data(), &DialogTool::destroyed, this, [this] () -> void { ShowToolTip(QString()); });
-        emit ui->view->itemClicked(nullptr);
-    }
-    else
+    if (!checked)
     {
         if (auto *tButton = qobject_cast<QAction *>(this->sender()))
         {
             tButton->setChecked(true);
         }
+        return;
     }
+
+    CancelTool();
+    emit EnableItemMove(false);
+    m_currentTool = m_lastUsedTool = t;
+
+    if (const VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
+        settings->GetPointerMode() == VToolPointerMode::ToolIcon)
+    {
+        const auto resource = QStringLiteral("toolcursor");
+        QPixmap const pixmap(ResolveToolCursorResource(resource, cursor));
+        QCursor const cur(pixmap, 2, 2);
+        ui->view->viewport()->setCursor(cur);
+        ui->view->setCurrentCursorShape(); // Hack to fix problem with a cursor
+    }
+
+    m_statusLabel->setText(toolTip);
+    ui->view->setShowToolOptions(false);
+    auto *dialogTool = new Dialog(pattern, doc, 0, this);
+
+    // This check helps to find missed tools in the switch
+    Q_STATIC_ASSERT_X(static_cast<int>(Tool::LAST_ONE_DO_NOT_USE) == 64, "Check if need to extend.");
+
+    switch (t)
+    {
+        case Tool::ArcStart:
+        case Tool::ArcEnd:
+        case Tool::Midpoint:
+            dialogTool->Build(t);
+            break;
+        case Tool::PiecePath:
+        case Tool::Pin:
+        case Tool::InsertNode:
+        case Tool::PlaceLabel:
+            dialogTool->SetPiecesList(doc->GetActivePPPieces());
+            break;
+        case Tool::Rotation:
+        case Tool::Move:
+        case Tool::FlippingByAxis:
+        case Tool::FlippingByLine:
+        case Tool::Group:
+            dialogTool->SetGroupCategories(doc->GetGroupCategories());
+            break;
+        case Tool::Piece:
+            dialogTool->SetPatternDoc(doc);
+            break;
+        default:
+            break;
+    }
+
+    VValentinaSettings  const*settings = VApplication::VApp()->ValentinaSettings();
+
+    if constexpr (std::is_same_v<Dialog,DialogEndLine> || std::is_same_v<Dialog,DialogAlongLine> ||
+                  std::is_same_v<Dialog,DialogBisector> || std::is_same_v<Dialog,DialogCurveIntersectAxis> ||
+                  std::is_same_v<Dialog,DialogHeight> || std::is_same_v<Dialog,DialogLine> ||
+                  std::is_same_v<Dialog,DialogLineIntersectAxis> || std::is_same_v<Dialog,DialogNormal> ||
+                  std::is_same_v<Dialog,DialogShoulderPoint>)
+    {
+        dialogTool->SetTypeLine(settings->GetGlobalPenStyle());
+        dialogTool->SetLineColor(settings->GetGlobalToolColor());
+    }
+
+    if constexpr (std::is_same_v<Dialog,DialogArc> || std::is_same_v<Dialog,DialogArcWithLength> ||
+                  std::is_same_v<Dialog,DialogEllipticalArc> ||
+                  std::is_same_v<Dialog,DialogEllipticalArcWithLength> ||
+                  std::is_same_v<Dialog,DialogParallelCurve> || std::is_same_v<Dialog,DialogGraduatedCurve>)
+    {
+        dialogTool->SetPenStyle(settings->GetGlobalPenStyle());
+        dialogTool->SetColor(settings->GetGlobalToolColor());
+    }
+
+    if constexpr (std::is_same_v<Dialog,DialogCubicBezier> || std::is_same_v<Dialog,DialogCubicBezierPath> ||
+                  std::is_same_v<Dialog,DialogSpline> || std::is_same_v<Dialog,DialogSplinePath>)
+    {
+        dialogTool->SetDefPenStyle(settings->GetGlobalPenStyle());
+        dialogTool->SetDefColor(settings->GetGlobalToolColor());
+    }
+
+    auto *scene = qobject_cast<VMainGraphicsScene *>(currentScene);
+    SCASSERT(scene != nullptr)
+
+    m_dialogTool = dialogTool;
+
+    // A full reparse (e.g. deleting a tool from the dependencies dock) would clear the scene and destroy this
+    // dialog's visualization. Block tool deletion until the creation is finished.
+    m_dependenciesWidget->SetToolCreationActive(true);
+
+    connect(scene, &VMainGraphicsScene::ChoosedObject, m_dialogTool.data(), &DialogTool::SceneObjectChosen);
+    if (t == Tool::Group)
+    {
+        connect(scene, &VMainGraphicsScene::SelectedObject, m_dialogTool.data(), &DialogTool::SelectedObject);
+    }
+    connect(m_dialogTool.data(), &DialogTool::DialogClosed, this, closeDialogSlot);
+    connect(m_dialogTool.data(), &DialogTool::ToolTip, this, &MainWindow::ShowToolTip);
+    connect(m_dialogTool.data(), &DialogTool::destroyed, this, [this] () -> void { ShowToolTip(QString()); });
+    emit ui->view->itemClicked(nullptr);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1481,9 +1662,8 @@ void MainWindow::ToolGroup(bool checked)
 void MainWindow::ToolRotation(bool checked)
 {
     ToolSelectOperationObjects();
-    const QString tooltip = tr("Select one or more objects, hold <b>%1</b> - for multiple selection, "
-                               "<b>%2</b> - confirm selection")
-                                .arg(VModifierKey::Control(), VModifierKey::EnterKey());
+    const QString tooltip = tr("Select one or more objects, <b>%1</b> - confirm selection")
+                                .arg(VModifierKey::EnterKey());
     SetToolButtonWithApply<DialogRotation>(checked, Tool::Rotation, QStringLiteral("rotation_cursor.png"), tooltip,
                                            &MainWindow::ClosedDrawDialogWithApply<VToolRotation>,
                                            &MainWindow::ApplyDrawDialog<VToolRotation>);
@@ -1494,9 +1674,8 @@ void MainWindow::ToolRotation(bool checked)
 void MainWindow::ToolFlippingByLine(bool checked)
 {
     ToolSelectOperationObjects();
-    const QString tooltip = tr("Select one or more objects, hold <b>%1</b> - for multiple selection, "
-                               "<b>%2</b> - confirm selection")
-                                .arg(VModifierKey::Control(), VModifierKey::EnterKey());
+    const QString tooltip = tr("Select one or more objects, <b>%1</b> - confirm selection")
+                                .arg(VModifierKey::EnterKey());
     SetToolButtonWithApply<DialogFlippingByLine>(
         checked, Tool::FlippingByLine, QStringLiteral("flipping_line_cursor.png"), tooltip,
         &MainWindow::ClosedDrawDialogWithApply<VToolFlippingByLine>, &MainWindow::ApplyDrawDialog<VToolFlippingByLine>);
@@ -1507,9 +1686,8 @@ void MainWindow::ToolFlippingByLine(bool checked)
 void MainWindow::ToolFlippingByAxis(bool checked)
 {
     ToolSelectOperationObjects();
-    const QString tooltip = tr("Select one or more objects, hold <b>%1</b> - for multiple selection, "
-                               "<b>%2</b> - confirm selection")
-                                .arg(VModifierKey::Control(), VModifierKey::EnterKey());
+    const QString tooltip = tr("Select one or more objects, <b>%1</b> - confirm selection")
+                                .arg(VModifierKey::EnterKey());
     SetToolButtonWithApply<DialogFlippingByAxis>(
         checked, Tool::FlippingByAxis, QStringLiteral("flipping_axis_cursor.png"), tooltip,
         &MainWindow::ClosedDrawDialogWithApply<VToolFlippingByAxis>, &MainWindow::ApplyDrawDialog<VToolFlippingByAxis>);
@@ -1520,9 +1698,8 @@ void MainWindow::ToolFlippingByAxis(bool checked)
 void MainWindow::ToolMove(bool checked)
 {
     ToolSelectOperationObjects();
-    const QString tooltip = tr("Select one or more objects, hold <b>%1</b> - for multiple selection, "
-                               "<b>%2</b> - confirm selection")
-                                .arg(VModifierKey::Control(), VModifierKey::EnterKey());
+    const QString tooltip = tr("Select one or more objects, <b>%1</b> - confirm selection")
+                                .arg(VModifierKey::EnterKey());
     SetToolButtonWithApply<DialogMove>(checked, Tool::Move, QStringLiteral("move_cursor.png"), tooltip,
                                        &MainWindow::ClosedDrawDialogWithApply<VToolMove>,
                                        &MainWindow::ApplyDrawDialog<VToolMove>);
@@ -1680,7 +1857,7 @@ void MainWindow::RemoveBackgroundImage(const QUuid &id)
  */
 void MainWindow::ToolCutArc(bool checked)
 {
-    ToolSelectArc();
+    ToolSelectArcCurve();
     SetToolButtonWithApply<DialogCutArc>(checked, Tool::CutArc, QStringLiteral("arc_cut_cursor.png"), tr("Select arc"),
                                          &MainWindow::ClosedDrawDialogWithApply<VToolCutArc>,
                                          &MainWindow::ApplyDrawDialog<VToolCutArc>);
@@ -1801,9 +1978,8 @@ void MainWindow::ToolTrueDarts(bool checked)
 void MainWindow::ToolInsertNode(bool checked)
 {
     ToolSelectOperationObjects();
-    const QString tooltip = tr("Select one or more objects, hold <b>%1</b> - for multiple selection, "
-                               "<b>%2</b> - finish creation")
-                                .arg(VModifierKey::Control(), VModifierKey::EnterKey());
+    const QString tooltip = tr("Select one or more objects, <b>%1</b> - confirm selection")
+                                .arg(VModifierKey::EnterKey());
     SetToolButton<DialogInsertNode>(checked, Tool::InsertNode, QStringLiteral("insert_node_cursor.png"), tooltip,
                                     &MainWindow::ClosedDialogInsertNode);
     LogPatternToolUsed(checked, QStringLiteral("Insert node tool"));
@@ -1812,7 +1988,7 @@ void MainWindow::ToolInsertNode(bool checked)
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::ToolArcStart(bool checked)
 {
-    ToolSelectArc();
+    ToolSelectArcElArc();
     // Reuse DialogCutArc and VToolCutArc but with different cursor
     SetToolButtonWithApply<DialogCutArc>(checked, Tool::ArcStart, QStringLiteral("arc_start_cursor.png"),
                                          tr("Select arc"), &MainWindow::ClosedDrawDialogWithApply<VToolCutArc>,
@@ -1823,7 +1999,7 @@ void MainWindow::ToolArcStart(bool checked)
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::ToolArcEnd(bool checked)
 {
-    ToolSelectArc();
+    ToolSelectArcElArc();
     // Reuse DialogCutArc and VToolCutArc but with different cursor
     SetToolButtonWithApply<DialogCutArc>(checked, Tool::ArcEnd, QStringLiteral("arc_end_cursor.png"), tr("Select arc"),
                                          &MainWindow::ClosedDrawDialogWithApply<VToolCutArc>,
@@ -1891,6 +2067,27 @@ void MainWindow::UpdateVisibilityGroups()
 void MainWindow::UpdateDetailsList()
 {
     m_detailsWidget->UpdateList();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::SetToolOptionsDialogVisible(bool visible)
+{
+    m_toolOptionsDialogVisible = visible;
+
+    // While a tool options dialog is open we must not let the user run undo/redo. An undo/redo emits
+    // VPattern::UndoCommand which triggers MainWindow::FullParseFile(), tearing down all tools and the
+    // VContainer the open dialog still references. Accepting the now-stale dialog afterwards dereferences
+    // freed geometry (use-after-free, e.g. crash in DialogSplinePath::SaveData).
+    if (visible)
+    {
+        undoAction->setEnabled(false);
+        redoAction->setEnabled(false);
+    }
+    else
+    {
+        undoAction->setEnabled(VAbstractApplication::VApp()->getUndoStack()->canUndo());
+        redoAction->setEnabled(VAbstractApplication::VApp()->getUndoStack()->canRedo());
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2150,15 +2347,6 @@ void MainWindow::ToolBarStyle(QToolBar *bar) const
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::ScaleChanged(qreal scale)
 {
-    if (not m_doubleSpinBoxScale.isNull())
-    {
-        const QSignalBlocker blocker(m_doubleSpinBoxScale);
-        m_doubleSpinBoxScale->setMaximum(qFloor(VMainGraphicsView::MaxScale() * 1000) / 10.0);
-        m_doubleSpinBoxScale->setMinimum(qFloor(VMainGraphicsView::MinScale() * 1000) / 10.0);
-        m_doubleSpinBoxScale->setValue(qFloor(scale * 1000) / 10.0);
-        m_doubleSpinBoxScale->setSingleStep(1);
-    }
-
     VMainGraphicsScene const *scene = nullptr;
     if (ui->view->scene() == m_sceneDraw)
     {
@@ -2173,12 +2361,36 @@ void MainWindow::ScaleChanged(qreal scale)
         return;
     }
 
+    if (not m_doubleSpinBoxScale.isNull())
+    {
+        const QSignalBlocker blocker(m_doubleSpinBoxScale);
+        m_doubleSpinBoxScale->setMaximum(qFloor(VMainGraphicsView::MaxScale() * 1000) / 10.0);
+        m_doubleSpinBoxScale->setMinimum(qFloor(VMainGraphicsView::MinScale() * 1000) / 10.0);
+        m_doubleSpinBoxScale->setValue(qFloor(scale * 1000) / 10.0);
+        m_doubleSpinBoxScale->setSingleStep(1);
+    }
+
+    // Scale-dependent item state must be refreshed here, not inside paint(). Since Qt 6
+    // mutating geometry/visibility/selection during paint() crashes the paint pipeline on
+    // Windows.
     for (QGraphicsItem *item : scene->items())
     {
+        // VGraphicsSimpleTextItem and VToolSeamAllowance have a single fixed type(), so a cheap
+        // int compare + static_cast is enough. VScenePoint is a base class whose subclasses
+        // override type(), so it can only be matched with dynamic_cast.
         if (item->type() == VGraphicsSimpleTextItem::Type)
         {
-            auto *text = dynamic_cast<VGraphicsSimpleTextItem *>(item);
-            text->RefreshScale();
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+            static_cast<VGraphicsSimpleTextItem *>(item)->RefreshScale();
+        }
+        else if (item->type() == VToolSeamAllowance::Type)
+        {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+            static_cast<VToolSeamAllowance *>(item)->RefreshScale();
+        }
+        else if (auto *point = dynamic_cast<VScenePoint *>(item))
+        {
+            point->RefreshScale();
         }
     }
 }
@@ -2365,6 +2577,7 @@ void MainWindow::ShowMeasurements()
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::MeasurementsChanged(const QString &path)
 {
+    qCDebug(vMainWindow, "Measurements file changed: %s", qUtf8Printable(path));
     m_mChanges = false;
     if (QFileInfo const checkFile(path); checkFile.exists())
     {
@@ -2399,6 +2612,7 @@ void MainWindow::SyncMeasurements()
     {
         const QString patternPath = VAbstractValApplication::VApp()->GetPatternPath();
         QString path = AbsoluteMPath(patternPath, doc->MPath());
+        qCDebug(vMainWindow, "Syncing measurements: %s", qUtf8Printable(path));
 
         // Temporarily remove the path to prevent infinite synchronization after a format conversion.
         m_watcher->removePath(path);
@@ -2425,6 +2639,41 @@ void MainWindow::SyncMeasurements()
         if (not m_watcher->files().contains(path))
         {
             m_watcher->addPath(path);
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::MeasurementsSyncTimerTimeout()
+{
+    // The nested event loop that keeps the GUI alive during a slow save still delivers timer events, so this can
+    // fire while a save or copy is in flight. Skip this turn rather than pop a modal on top of the busy dialog:
+    // this timer repeats, so the next tick asks again.
+    if (VAsyncFileIO::IsFileOperationRunning())
+    {
+        return;
+    }
+
+    if (isActiveWindow())
+    {
+        static bool asking = false;
+        if (not asking && m_mChanges && not m_mChangesAsked)
+        {
+            asking = true;
+            m_mChangesAsked = true;
+            m_measurementsSyncTimer->stop();
+            qCDebug(vMainWindow, "Asking user to sync measurements.");
+            const auto answer = QMessageBox::question(
+                this, tr("Measurements"),
+                tr("Measurements were changed. Do you want to sync measurements now?"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            qCDebug(vMainWindow, "User answered sync prompt: %s",
+                    answer == QMessageBox::Yes ? "Yes" : "No");
+            if (answer == QMessageBox::Yes)
+            {
+                SyncMeasurements();
+            }
+            asking = false;
         }
     }
 }
@@ -2874,28 +3123,9 @@ auto MainWindow::SavePatternAs(const QString &fileName) -> bool
 //---------------------------------------------------------------------------------------------------------------------
 auto MainWindow::FullParsePattern() -> bool
 {
-    QFuture<void> futureTestUniqueId;
-
-    auto WaitForFutureFinish = [](QFuture<void> &futureTestUniqueId)
-    {
-        try
-        {
-            futureTestUniqueId.waitForFinished();
-        }
-        catch (...)
-        {
-            // ignore
-        }
-    };
-
-    auto HandleError = [this, WaitForFutureFinish](QFuture<void> &futureTestUniqueId)
+    auto HandleError = [this]()
     {
         SetEnabledGUI(false);
-        if (VAbstractValApplication::VApp()->getOpeningPattern())
-        {
-            WaitForFutureFinish(futureTestUniqueId);
-        }
-
         if (not VApplication::IsGUIMode())
         {
             QCoreApplication::exit(V_EX_DATAERR);
@@ -2904,42 +3134,20 @@ auto MainWindow::FullParsePattern() -> bool
 
     try
     {
+        // QDomDocument is not thread-safe and Parse() rewrites the same document, so this must stay on this thread.
         if (VAbstractValApplication::VApp()->getOpeningPattern())
         {
-            futureTestUniqueId = QtConcurrent::run([this]() { doc->TestUniqueId(); });
+            doc->TestUniqueId();
         }
 
         SetEnabledGUI(true);
         doc->Parse(Document::FullParse);
         ParseBackgroundImages();
-
-        if (VAbstractValApplication::VApp()->getOpeningPattern())
-        {
-            futureTestUniqueId.waitForFinished();
-        }
     }
     catch (const VExceptionUndo &)
     {
         /* If user want undo last operation before undo we need finish broken redo operation. For those we post event
          * myself. Later in method customEvent call undo.*/
-        if (VAbstractValApplication::VApp()->getOpeningPattern())
-        {
-            try
-            {
-                futureTestUniqueId.waitForFinished();
-            }
-            catch (const VExceptionWrongId &e)
-            {
-                qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error wrong id.")),
-                           qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-                SetEnabledGUI(false);
-                if (not VApplication::IsGUIMode())
-                {
-                    QCoreApplication::exit(V_EX_DATAERR);
-                }
-                return false;
-            }
-        }
         QApplication::postEvent(this, new UndoEvent());
         return false;
     }
@@ -2947,41 +3155,41 @@ auto MainWindow::FullParsePattern() -> bool
     {
         qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error parsing file.")), //-V807
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
     catch (const VExceptionConversionError &e)
     {
         qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error can't convert value.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
     catch (const VExceptionEmptyParameter &e)
     {
         qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error empty parameter.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
     catch (const VExceptionWrongId &e)
     {
         qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error wrong id.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
     catch (VException &e)
     {
         qCCritical(vMainWindow, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error parsing file.")),
                    qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
     catch (const std::bad_alloc &)
     {
         qCCritical(vMainWindow, "%s", qUtf8Printable(tr("Error parsing file (std::bad_alloc).")));
-        HandleError(futureTestUniqueId);
+        HandleError();
         return false;
     }
 
@@ -3150,7 +3358,7 @@ void MainWindow::ToolBarPenOptions()
         {
             m_pushButtonColor->insertCustomColor(color);
         }
-    });
+    }, Qt::QueuedConnection);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -3169,7 +3377,8 @@ void MainWindow::ToolBarTools()
     connect(ui->actionZoomFitBest, &QAction::triggered, ui->view, &VMainGraphicsView::ZoomFitBest);
 
     m_shortcutActions.insert(VShortcutAction::ZoomFitBestCurrent, ui->actionZoomFitBestCurrent);
-    connect(ui->actionZoomFitBestCurrent, &QAction::triggered, this, &MainWindow::ZoomFitBestCurrent);
+    connect(ui->actionZoomFitBestCurrent, &QAction::triggered, this, &MainWindow::ZoomFitBestCurrent,
+            Qt::QueuedConnection);
 
     connect(ui->actionPreviousPatternPiece, &QAction::triggered, this, &MainWindow::PreviousPatternPiece);
     connect(ui->actionNextPatternPiece, &QAction::triggered, this, &MainWindow::NextPatternPiece);
@@ -3180,15 +3389,9 @@ void MainWindow::ToolBarTools()
             {
                 VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
                 settings->SetPatternLabelFontSize(settings->GetPatternLabelFontSize() + 1);
-                if (m_sceneDraw)
-                {
-                    m_sceneDraw->update();
-                }
-
-                if (m_sceneDetails)
-                {
-                    m_sceneDetails->update();
-                }
+                // Label visibility depends on the font size and is recomputed in RefreshScale(),
+                // not in paint(), so drive the existing refresh dispatch instead of a bare update().
+                ScaleChanged(ui->view->transform().m11());
             });
 
     m_shortcutActions.insert(VShortcutAction::DecreaseLabelFont, ui->actionDecreaseLabelFont);
@@ -3197,15 +3400,7 @@ void MainWindow::ToolBarTools()
             {
                 VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
                 settings->SetPatternLabelFontSize(settings->GetPatternLabelFontSize() - 1);
-                if (m_sceneDraw)
-                {
-                    m_sceneDraw->update();
-                }
-
-                if (m_sceneDetails)
-                {
-                    m_sceneDetails->update();
-                }
+                ScaleChanged(ui->view->transform().m11());
             });
 
     m_shortcutActions.insert(VShortcutAction::OriginalLabelFont, ui->actionOriginalLabelFont);
@@ -3214,15 +3409,7 @@ void MainWindow::ToolBarTools()
             {
                 VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
                 settings->SetPatternLabelFontSize(VCommonSettings::GetDefPatternLabelFontSize());
-                if (m_sceneDraw)
-                {
-                    m_sceneDraw->update();
-                }
-
-                if (m_sceneDetails)
-                {
-                    m_sceneDetails->update();
-                }
+                ScaleChanged(ui->view->transform().m11());
             });
 
     m_shortcutActions.insert(VShortcutAction::HideLabels, ui->actionHideLabels);
@@ -3231,15 +3418,7 @@ void MainWindow::ToolBarTools()
             [this](bool checked)
             {
                 VAbstractValApplication::VApp()->ValentinaSettings()->SetHideLabels(checked);
-                if (m_sceneDraw)
-                {
-                    m_sceneDraw->update();
-                }
-
-                if (m_sceneDetails)
-                {
-                    m_sceneDetails->update();
-                }
+                ScaleChanged(ui->view->transform().m11());
             });
 }
 
@@ -3642,6 +3821,7 @@ void MainWindow::InitActionShortcuts()
     m_shortcutActions.insert(VShortcutAction::CurveDetails, ui->actionShowCurveDetails);
     m_shortcutActions.insert(VShortcutAction::FinalMeasurements, ui->actionFinalMeasurements);
     m_shortcutActions.insert(VShortcutAction::ReloadPieceLabels, ui->actionReloadLabels);
+    m_shortcutActions.insert(VShortcutAction::AutoArrangeLabels, ui->actionAutoArrangeLabels);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -3676,6 +3856,7 @@ void MainWindow::CancelTool()
         m_dialogTool->hide();
         m_dialogTool->deleteLater();
     }
+    m_dependenciesWidget->SetToolCreationActive(false); // Creation finished/cancelled: allow deletion again.
     qCDebug(vMainWindow, "Dialog closed.");
 
     currentScene->setFocus(Qt::OtherFocusReason);
@@ -3691,6 +3872,7 @@ void MainWindow::CancelTool()
         case Tool::Arrow:
             ui->actionToolSelect->setChecked(false);
             m_statusLabel->setText(QString());
+            m_comboBoxDraws->setEnabled(false);
 
             // Crash: using CRTL+Z while using line tool.
             // related bug report:
@@ -3869,8 +4051,10 @@ void MainWindow::CancelTool()
     // Crash: using CRTL+Z while using line tool.
     // related bug report:
     // https://bitbucket.org/dismine/valentina/issues/454/crash-using-crtl-z-while-using-line-tool
-    undoAction->setEnabled(VAbstractApplication::VApp()->getUndoStack()->canUndo());
-    redoAction->setEnabled(VAbstractApplication::VApp()->getUndoStack()->canRedo());
+    undoAction->setEnabled(not m_toolOptionsDialogVisible &&
+                           VAbstractApplication::VApp()->getUndoStack()->canUndo());
+    redoAction->setEnabled(not m_toolOptionsDialogVisible &&
+                           VAbstractApplication::VApp()->getUndoStack()->canRedo());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -3954,6 +4138,7 @@ void MainWindow::ArrowTool(bool checked)
         qCDebug(vMainWindow, "Arrow tool.");
         CancelTool();
         ui->actionToolSelect->setChecked(true);
+        m_comboBoxDraws->setEnabled(true);
         m_currentTool = Tool::Arrow;
         emit EnableItemMove(true);
         emit ItemsSelection(SelectionType::ByMouseRelease);
@@ -3984,6 +4169,11 @@ void MainWindow::ArrowTool(bool checked)
         emit EnableNodePointHover(true);
         emit EnableDetailHover(true);
         emit EnableImageBackgroundHover(true);
+
+        emit ShowArcSegmentLabel(false);
+        emit ShowElArcSegmentLabel(false);
+        emit ShowSplineSegmentLabel(false);
+        emit ShowSplinePathSegmentLabel(false);
 
         ui->view->AllowRubberBand(true);
         ui->view->viewport()->unsetCursor();
@@ -4059,6 +4249,7 @@ void MainWindow::RestoreCurrentScene()
     horScrollBar->setValue(scene->getHorScrollBar());
     QScrollBar *verScrollBar = ui->view->verticalScrollBar();
     verScrollBar->setValue(scene->getVerScrollBar());
+    ScaleChanged(ui->view->transform().m11());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -4087,6 +4278,11 @@ void MainWindow::ActionDraw(bool checked)
         ui->view->setScene(currentScene);
         RestoreCurrentScene();
 
+        // Scale-dependent item state (e.g. label visibility) lives in RefreshScale(), not paint().
+        // It is not refreshed while a scene is inactive, so re-run the dispatch now that the scene is
+        // shown and the view transform is valid; otherwise stale state lingers until the next zoom.
+        ScaleChanged(ui->view->transform().m11());
+
         VAbstractValApplication::VApp()->SetDrawMode(Draw::Calculation);
         m_comboBoxDraws->setCurrentIndex(m_currentDrawIndex); // restore current pattern peace
         m_drawMode = true;
@@ -4110,6 +4306,11 @@ void MainWindow::ActionDraw(bool checked)
         ui->dockWidgetBackgroundImages->setVisible(m_backgroundImagesActive);
 
         ui->dockWidgetDependencies->setVisible(m_dependenciesActive);
+
+        actionDockWidgetToolOptions->setEnabled(true);
+        actionDockWidgetGroups->setEnabled(true);
+        actionDockWidgetBackgroundImages->setEnabled(true);
+        actionDockWidgetDependencies->setEnabled(true);
     }
     else
     {
@@ -4163,6 +4364,11 @@ void MainWindow::ActionDetails(bool checked)
         ui->view->setScene(currentScene);
         RestoreCurrentScene();
 
+        // Scale-dependent item state (e.g. label visibility) lives in RefreshScale(), not paint().
+        // It is not refreshed while a scene is inactive, so re-run the dispatch now that the scene is
+        // shown and the view transform is valid; otherwise stale state lingers until the next zoom.
+        ScaleChanged(ui->view->transform().m11());
+
         VAbstractValApplication::VApp()->SetDrawMode(Draw::Modeling);
         SetEnableTool(true);
         SetEnableWidgets(true);
@@ -4182,6 +4388,9 @@ void MainWindow::ActionDetails(bool checked)
         ui->dockWidgetToolOptions->setVisible(m_toolOptionsActive);
         ui->dockWidgetBackgroundImages->setVisible(false);
         ui->dockWidgetDependencies->setVisible(false);
+
+        actionDockWidgetBackgroundImages->setDisabled(true);
+        actionDockWidgetDependencies->setDisabled(true);
 
         m_statusLabel->setText(QString());
 
@@ -4296,6 +4505,11 @@ void MainWindow::ActionLayout(bool checked)
     ui->dockWidgetGroups->setVisible(false);
     ui->dockWidgetBackgroundImages->setVisible(false);
     ui->dockWidgetDependencies->setVisible(false);
+
+    actionDockWidgetToolOptions->setDisabled(true);
+    actionDockWidgetGroups->setDisabled(true);
+    actionDockWidgetBackgroundImages->setDisabled(true);
+    actionDockWidgetDependencies->setDisabled(true);
 
     ShowPaper(ui->listWidget->currentRow());
 
@@ -4602,7 +4816,7 @@ void MainWindow::ActionAddBackgroundImage()
 void MainWindow::ActionExportFontCorrections()
 {
     // Use standard path to manual layouts
-    VValentinaSettings  const*settings = VAbstractValApplication::VApp()->ValentinaSettings();
+    const VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
     const QString dirPath = settings->GetPathFontCorrections();
 
     bool usedNotExistedDir = false;
@@ -4612,7 +4826,7 @@ void MainWindow::ActionExportFontCorrections()
     }
 
     auto RemoveUnsuded = qScopeGuard(
-        [usedNotExistedDir, dirPath]()
+        [usedNotExistedDir, dirPath]() -> void
         {
             if (usedNotExistedDir)
             {
@@ -4621,12 +4835,23 @@ void MainWindow::ActionExportFontCorrections()
             }
         });
 
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Select folder"), dirPath,
-        VAbstractApplication::VApp()->NativeFileDialog(QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks));
-    if (not dir.isEmpty())
+
+    if (const QString dir = QFileDialog::getExistingDirectory(
+                this, tr("Select folder"), dirPath,
+                VAbstractApplication::VApp()->NativeFileDialog(QFileDialog::ShowDirsOnly |
+                                                               QFileDialog::DontResolveSymlinks));not dir.isEmpty())
     {
-        VSingleLineOutlineChar const corrector(settings->GetLabelFont());
+        const QFont labelFont = settings->GetLabelFont();
+        if (const QString filePath = QStringLiteral("%1/%2.json").arg(dir, labelFont.family());
+                QFileInfo::exists(filePath) &&
+                QMessageBox::question(this, tr("Export corrections"),
+                                      tr("File '%1' already exists. Overwrite it?").arg(filePath),
+                                      QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        {
+            return;
+        }
+
+        VSingleLineOutlineChar const corrector(labelFont);
         corrector.ExportCorrections(dir);
     }
 }
@@ -4735,12 +4960,19 @@ void MainWindow::Clear()
     UpdateVisibilityGroups();
     m_detailsWidget->UpdateList();
     m_backgroundImagesWidget->UpdateImages();
+    m_dependenciesWidget->Clear();
     qCDebug(vMainWindow, "Clearing scenes.");
     m_sceneDraw->clear();
+    qCDebug(vMainWindow, "Draw scene cleared.");
     m_sceneDraw->SetAcceptDrop(false);
     m_sceneDetails->clear();
+    qCDebug(vMainWindow, "Details scene cleared.");
     ArrowTool(true);
-    m_comboBoxDraws->clear();
+    {
+        const QSignalBlocker blocker(m_comboBoxDraws);
+        m_comboBoxDraws->clear();
+        m_comboBoxDraws->setDisabled(true);
+    }
     ui->actionDraw->setEnabled(false);
     ui->actionDetails->setEnabled(false);
     ui->actionLayout->setEnabled(false);
@@ -4760,6 +4992,7 @@ void MainWindow::Clear()
     ui->actionFinalMeasurements->setEnabled(false);
     ui->actionLast_tool->setEnabled(false);
     ui->actionShowCurveDetails->setEnabled(false);
+    ui->actionShowSegmentLabels->setEnabled(false);
     ui->actionShowAccuracyRadius->setEnabled(false);
     ui->actionShowMainPath->setEnabled(false);
     ui->actionBoundaryTogetherWithNotches->setEnabled(false);
@@ -4770,6 +5003,7 @@ void MainWindow::Clear()
     ui->actionNextPatternPiece->setEnabled(false);
     ui->actionAddBackgroundImage->setEnabled(false);
     ui->actionReloadLabels->setEnabled(false);
+    ui->actionAutoArrangeLabels->setEnabled(false);
     SetEnableTool(false);
     VAbstractValApplication::VApp()->SetPatternUnits(Unit::Cm);
     VAbstractValApplication::VApp()->SetMeasurementsType(MeasurementsType::Unknown);
@@ -4821,6 +5055,17 @@ void MainWindow::FullParseFile()
 {
     qCDebug(vMainWindow, "Full parsing file");
 
+    if (m_toolOptionsDialogVisible)
+    {
+        // A full reparse tears down all tools and the VContainer. Any tool options dialog still open
+        // now references freed data, and accepting it would crash. Reject it before teardown.
+        const QList<DialogTool *> openDialogs = findChildren<DialogTool *>();
+        for (DialogTool *dialog : openDialogs)
+        {
+            dialog->reject();
+        }
+    }
+
     m_toolOptions->ClearPropertyBrowser();
 
     if (not FullParsePattern())
@@ -4870,6 +5115,11 @@ void MainWindow::FullParseFile()
 void MainWindow::GlobalChangePP(const QString &patternPiece)
 {
     const qint32 index = m_comboBoxDraws->findText(patternPiece);
+    if (index == m_comboBoxDraws->currentIndex() && doc->PatternBlockMapper()->GetActive() == patternPiece)
+    {
+        return;
+    }
+
     try
     {
         if (index != -1)
@@ -5011,6 +5261,7 @@ void MainWindow::SetEnableWidgets(bool enable)
     ui->actionZoomFitBestCurrent->setEnabled(enableOnDrawStage);
     ui->actionZoomOriginal->setEnabled(enable);
     ui->actionShowCurveDetails->setEnabled(enableOnDrawStage);
+    ui->actionShowSegmentLabels->setEnabled(enableOnDrawStage);
     ui->actionShowAccuracyRadius->setEnabled(enableOnDesignStage);
     ui->actionShowMainPath->setEnabled(enableOnDetailsStage);
     ui->actionBoundaryTogetherWithNotches->setEnabled(enableOnDetailsStage);
@@ -5020,6 +5271,7 @@ void MainWindow::SetEnableWidgets(bool enable)
     ui->actionNextPatternPiece->setEnabled(enableOnDrawStage);
     ui->actionAddBackgroundImage->setEnabled(enableOnDrawStage);
     ui->actionReloadLabels->setEnabled(enableOnDetailsStage);
+    ui->actionAutoArrangeLabels->setEnabled(enableOnDesignStage);
     ui->actionIncreaseLabelFont->setEnabled(enable);
     ui->actionDecreaseLabelFont->setEnabled(enable);
     ui->actionOriginalLabelFont->setEnabled(enable);
@@ -5035,8 +5287,10 @@ void MainWindow::SetEnableWidgets(bool enable)
     actionDockWidgetGroups->setEnabled(enableOnDesignStage);
     actionDockWidgetBackgroundImages->setEnabled(enableOnDrawStage);
 
-    undoAction->setEnabled(enableOnDesignStage && VAbstractApplication::VApp()->getUndoStack()->canUndo());
-    redoAction->setEnabled(enableOnDesignStage && VAbstractApplication::VApp()->getUndoStack()->canRedo());
+    undoAction->setEnabled(enableOnDesignStage && not m_toolOptionsDialogVisible &&
+                           VAbstractApplication::VApp()->getUndoStack()->canUndo());
+    redoAction->setEnabled(enableOnDesignStage && not m_toolOptionsDialogVisible &&
+                           VAbstractApplication::VApp()->getUndoStack()->canRedo());
 
     // Now we don't want allow user call context menu
     m_sceneDraw->EnableTools();
@@ -5111,6 +5365,11 @@ void MainWindow::PatternChangesWereSaved(bool saved)
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::DimensionABaseChanged()
 {
+    if (m_m.isNull())
+    {
+        return;
+    }
+
     const qreal oldValue = m_currentDimensionA;
     m_currentDimensionA = m_dimensionA->currentData().toDouble();
     doc->SetDimensionAValue(m_currentDimensionA);
@@ -5136,6 +5395,11 @@ void MainWindow::DimensionABaseChanged()
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::DimensionBBaseChanged()
 {
+    if (m_m.isNull())
+    {
+        return;
+    }
+
     const qreal oldValue = m_currentDimensionB;
     m_currentDimensionB = m_dimensionB->currentData().toDouble();
     doc->SetDimensionBValue(m_currentDimensionB);
@@ -5170,18 +5434,28 @@ void MainWindow::GradationChanged()
 {
     m_gradation->stop();
 
-    if (m_m->isNull())
+    // Only a freshly (re)opened measurement file needs the dimension gradation combo boxes rebuilt.
+    // A plain size switch keeps the same gradation lists, so skip that redundant work.
+    bool reopened = false;
+    if (m_m.isNull())
     {
         const QString patternPath = VAbstractValApplication::VApp()->GetPatternPath();
         QString mPath = AbsoluteMPath(patternPath, doc->MPath());
         m_m = OpenMeasurementFile(patternPath, mPath);
+        reopened = true;
     }
 
-    if (UpdateMeasurements(m_m, m_currentDimensionA, m_currentDimensionB, m_currentDimensionC))
+    if (UpdateMeasurements(m_m, m_currentDimensionA, m_currentDimensionB, m_currentDimensionC, reopened))
     {
         doc->LiteParseTree(Document::FullLiteParse);
+        qCDebug(vMainWindow, "GradationChanged: lite parse tree done.");
         StoreDimensions();
-        emit m_sceneDetails->DimensionsChanged();
+        qCDebug(vMainWindow, "GradationChanged: dimensions stored.");
+        // A size switch is a discrete user action: refresh piece geometry immediately instead of
+        // waiting for the debounce timer started by the parse. RefreshPieceGeometry() also refreshes
+        // the piece labels, so the previous eager DimensionsChanged() emit is no longer needed.
+        doc->RefreshPieceGeometry();
+        qCDebug(vMainWindow, "GradationChanged: piece geometry refreshed.");
     }
     else
     {
@@ -5216,6 +5490,16 @@ void MainWindow::ClearPatternMessages()
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::AskDefaultSettings()
 {
+    // Unlike the repeating autosave/sync timers, this is a one-shot startup call: a bare early return here would
+    // mean the user is simply never asked these onboarding questions if a file operation (e.g. a slow
+    // pre-conversion backup copy) happens to be in flight during that first second. Reschedule instead, so it
+    // retries a second later rather than dropping the ask on the floor.
+    if (VAsyncFileIO::IsFileOperationRunning())
+    {
+        QTimer::singleShot(1s, this, &MainWindow::AskDefaultSettings);
+        return;
+    }
+
     if (VApplication::IsGUIMode())
     {
         VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
@@ -5872,6 +6156,14 @@ auto MainWindow::SavePattern(const QString &fileName, QString &error) -> bool
  */
 void MainWindow::AutoSavePattern()
 {
+    // The nested event loop that keeps the GUI alive during a slow save still delivers timer events, so this can
+    // fire while a save or copy is in flight. Skip this turn rather than queue a second one: isNeedAutosave stays
+    // true, so the next tick retries.
+    if (VAsyncFileIO::IsFileOperationRunning())
+    {
+        return;
+    }
+
     if (VApplication::IsGUIMode() && not VAbstractValApplication::VApp()->GetPatternPath().isEmpty() &&
         isWindowModified() && isNeedAutosave)
     {
@@ -5935,7 +6227,7 @@ void MainWindow::ReadSettings()
     if (settings->status() == QSettings::NoError)
     {
         restoreGeometry(settings->GetGeometry());
-        restoreState(settings->GetToolbarsState(), static_cast<int>(AppVersion()));
+        restoreState(settings->GetToolbarsState(), kToolbarStateVersion);
 
         m_groupsActive = settings->IsDockWidgetGroupsActive();
         m_toolOptionsActive = settings->IsDockWidgetToolOptionsActive();
@@ -5985,7 +6277,7 @@ void MainWindow::WriteSettings()
 
     VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
     settings->SetGeometry(saveGeometry());
-    settings->SetToolbarsState(saveState(static_cast<int>(AppVersion())));
+    settings->SetToolbarsState(saveState(kToolbarStateVersion));
 
     settings->SetDockWidgetGroupsActive(ui->dockWidgetGroups->isVisible());
     settings->SetDockWidgetToolOptionsActive(ui->dockWidgetToolOptions->isVisible());
@@ -6380,7 +6672,8 @@ void MainWindow::InitDocksContain()
     m_toolOptions = new VToolOptionsPropertyBrowser(ui->dockWidgetToolOptions);
 
     connect(ui->view, &VMainGraphicsView::itemClicked, m_toolOptions, &VToolOptionsPropertyBrowser::itemClicked);
-    connect(doc, &VPattern::FullUpdateFromFile, m_toolOptions, &VToolOptionsPropertyBrowser::UpdateOptions);
+    connect(doc, &VPattern::FullUpdateFromFile, m_toolOptions, &VToolOptionsPropertyBrowser::UpdateOptions,
+            Qt::QueuedConnection);
 
     qCDebug(vMainWindow, "Initialization groups dock.");
     m_groupsWidget = new VWidgetGroups(doc, this);
@@ -6403,8 +6696,17 @@ void MainWindow::InitDocksContain()
             Qt::QueuedConnection);
     connect(doc, &VPattern::PatternDependencyGraphCompleted, m_dependenciesWidget,
             &VWidgetDependencies::UpdateDependencies, Qt::QueuedConnection);
-    connect(ui->view, &VMainGraphicsView::itemClicked, m_dependenciesWidget, &VWidgetDependencies::ShowDependency,
-            Qt::QueuedConnection);
+    // Extract the tool ID synchronously while the item is alive, then deliver it
+    // via a queued call so ShowDependency does not block the UI thread.
+    // Passing a raw QGraphicsItem* through a queued connection is unsafe because
+    // the item can be destroyed before the slot fires.
+    connect(ui->view, &VMainGraphicsView::itemClicked, this,
+            [this](QGraphicsItem *item) -> void
+            {
+                const vidtype id = VWidgetDependencies::ItemToId(item);
+                QMetaObject::invokeMethod(m_dependenciesWidget, [widget = m_dependenciesWidget, id]()-> void
+                                          { widget->ShowDependency(id); }, Qt::QueuedConnection);
+            });
     connect(m_dependenciesWidget, &VWidgetDependencies::ShowProperties, m_toolOptions,
             &VToolOptionsPropertyBrowser::itemClicked, Qt::QueuedConnection);
     connect(m_dependenciesWidget, &VWidgetDependencies::ShowTool, ui->view, &VMainGraphicsView::EnsureToolVisible,
@@ -6498,11 +6800,29 @@ void MainWindow::CreateActions()
 
     ui->actionShowCurveDetails->setChecked(VAbstractValApplication::VApp()->ValentinaSettings()->IsShowCurveDetails());
     connect(ui->actionShowCurveDetails, &QAction::triggered, this,
-            [this](bool checked)
+            [this](bool checked) -> void
             {
                 emit ui->view->itemClicked(nullptr);
-                m_sceneDraw->EnableDetailsMode(checked);
                 VAbstractValApplication::VApp()->ValentinaSettings()->SetShowCurveDetails(checked);
+                m_sceneDraw->EnableDetailsMode(checked);
+            });
+
+    ui->actionShowSegmentLabels->setChecked(
+        VAbstractValApplication::VApp()->ValentinaSettings()->IsShowSegmentLabels());
+    connect(ui->actionShowSegmentLabels, &QAction::triggered, this,
+            [this](bool checked) -> void
+            {
+                VAbstractValApplication::VApp()->ValentinaSettings()->SetShowSegmentLabels(checked);
+                if (!checked)
+                {
+                    emit ShowArcSegmentLabel(false);
+                    emit ShowElArcSegmentLabel(false);
+                    emit ShowSplineSegmentLabel(false);
+                    emit ShowSplinePathSegmentLabel(false);
+                }
+                const bool detailsMode =
+                    VAbstractValApplication::VApp()->ValentinaSettings()->IsShowCurveDetails();
+                m_sceneDraw->EnableDetailsMode(detailsMode);
             });
 
     ui->actionShowAccuracyRadius->setChecked(
@@ -6626,9 +6946,20 @@ auto MainWindow::PatternPieceName(QString &name) -> bool
 //---------------------------------------------------------------------------------------------------------------------
 MainWindow::~MainWindow()
 {
+    VAsyncFileIO::SetBusyIndicatorHandler(nullptr); // the handler above captures this - drop it first
+
     CancelTool();
 
     delete doc;
+
+    // Delete the scenes explicitly, while this window's own widgets (e.g. m_statusLabel) are still guaranteed
+    // alive. A tool item destroyed here can still emit ToolTip() while tearing down its visualization preview
+    // (e.g. VisToolSplinePath), which reaches MainWindow::ShowToolTip(). Left to Qt's implicit child cleanup
+    // instead, the scenes would be destroyed later, after m_statusLabel may already be gone, crashing on freed
+    // memory.
+    delete m_sceneDraw;
+    delete m_sceneDetails;
+
     delete ui;
 }
 
@@ -6775,7 +7106,7 @@ auto MainWindow::LoadPattern(QString fileName, const QString &customMeasureFile)
             doc->setXMLContent(converter->Convert());
 
             VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
-            if (settings->IsCollectStatistic())
+            if (VApplication::IsGUIMode() && settings->IsCollectStatistic())
             {
                 auto *statistic = VGAnalytics::Instance();
 
@@ -7041,6 +7372,11 @@ void MainWindow::Preferences()
         connect(dlg.data(), &DialogPreferences::UpdateProperties, this, &MainWindow::ToolBarDrawTools);
         connect(dlg.data(), &DialogPreferences::UpdateProperties, this, [this]() { emit doc->FullUpdateFromFile(); });
         connect(dlg.data(), &DialogPreferences::UpdateProperties, this, [this]() { emit doc->CheckLayout(); });
+        // Queued: a full reparse tears down the tool tree and scene. Running it synchronously would
+        // happen in the middle of DialogPreferences::Apply(), before it finishes applying the rest of
+        // the settings and before UpdateProperties() fires. Defer it until Apply() has returned.
+        connect(dlg.data(), &DialogPreferences::RequestFullParse, this, &MainWindow::FullParseFile,
+                Qt::QueuedConnection);
         connect(dlg.data(), &DialogPreferences::UpdateProperties, ui->view,
                 &VMainGraphicsView::ResetScrollingAnimation);
         QGuiApplication::restoreOverrideCursor();
@@ -7378,13 +7714,9 @@ void MainWindow::ChangePP(int index, bool zoomBestFit)
     {
         doc->PatternBlockMapper()->SetActive(m_comboBoxDraws->itemText(index));
         doc->setCurrentData();
-        if (m_drawMode)
+        if (m_drawMode && zoomBestFit)
         {
-            ArrowTool(true);
-            if (zoomBestFit)
-            {
-                ZoomFitBestCurrent();
-            }
+            ZoomFitBestCurrent();
         }
         m_toolOptions->itemClicked(nullptr); // hide options for tool in previous pattern piece
         m_groupsWidget->UpdateGroups();
@@ -7395,10 +7727,22 @@ void MainWindow::ChangePP(int index, bool zoomBestFit)
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::EndVisualization(bool click)
 {
-    if (not m_dialogTool.isNull())
+    if (m_dialogTool.isNull())
     {
-        m_dialogTool->ShowDialog(click);
+        return;
     }
+
+    if (m_dialogTool->VisualizationBroken())
+    {
+        // The scene was fully reparsed (e.g. another tool was deleted) while this creation dialog was open,
+        // which deleted its visualization item. Its ShowDialog() override would dereference the now-freed vis
+        // and crash. Ignore the event; the user can still cancel the half-finished tool.
+        qCDebug(vMainWindow, "Ignoring scene event: the open tool dialog's visualization was destroyed by a "
+                             "reparse (scene cleared). Nothing to finish.");
+        return;
+    }
+
+    m_dialogTool->ShowDialog(click);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -7940,6 +8284,8 @@ void MainWindow::ToolSelectSpline()
     emit EnableSplinePathHover(false);
     emit EnableImageBackgroundHover(false);
 
+    emit ShowSplineSegmentLabel(true);
+
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
     ui->view->AllowRubberBand(false);
@@ -7967,6 +8313,8 @@ void MainWindow::ToolSelectSplinePath()
     emit EnableSplineHover(false);
     emit EnableSplinePathHover(true);
     emit EnableImageBackgroundHover(false);
+
+    emit ShowSplinePathSegmentLabel(true);
 
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
@@ -7996,9 +8344,48 @@ void MainWindow::ToolSelectArc()
     emit EnableSplinePathHover(false);
     emit EnableImageBackgroundHover(false);
 
+    emit ShowArcSegmentLabel(true);
+
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
     ui->view->AllowRubberBand(false);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::ToolSelectArcElArc()
+{
+    // Only true for rubber band selection
+    emit EnableLabelSelection(false);
+    emit EnablePointSelection(false);
+    emit EnableLineSelection(false);
+    emit EnableArcSelection(false);
+    emit EnableElArcSelection(false);
+    emit EnableSplineSelection(false);
+    emit EnableSplinePathSelection(false);
+    emit EnableBackgroundImageSelection(false);
+
+    // Hovering
+    emit EnableLabelHover(false);
+    emit EnablePointHover(false);
+    emit EnableLineHover(false);
+    emit EnableArcHover(true);
+    emit EnableElArcHover(true);
+    emit EnableSplineHover(false);
+    emit EnableSplinePathHover(false);
+    emit EnableImageBackgroundHover(false);
+
+    emit ShowArcSegmentLabel(true);
+    emit ShowElArcSegmentLabel(true);
+
+    emit ItemsSelection(SelectionType::ByMouseRelease);
+
+    ui->view->AllowRubberBand(false);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::ToolSelectArcCurve()
+{
+    ToolSelectArcElArc();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -8023,6 +8410,8 @@ void MainWindow::ToolSelectPointArc()
     emit EnableSplineHover(false);
     emit EnableSplinePathHover(false);
     emit EnableImageBackgroundHover(false);
+
+    emit ShowArcSegmentLabel(true);
 
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
@@ -8052,6 +8441,11 @@ void MainWindow::ToolSelectCurve()
     emit EnableSplinePathHover(true);
     emit EnableImageBackgroundHover(false);
 
+    emit ShowArcSegmentLabel(true);
+    emit ShowElArcSegmentLabel(true);
+    emit ShowSplineSegmentLabel(true);
+    emit ShowSplinePathSegmentLabel(true);
+
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
     ui->view->AllowRubberBand(false);
@@ -8080,6 +8474,11 @@ void MainWindow::ToolSelectAllDrawObjects()
     emit EnableSplinePathHover(true);
     emit EnableImageBackgroundHover(false);
 
+    emit ShowArcSegmentLabel(true);
+    emit ShowElArcSegmentLabel(true);
+    emit ShowSplineSegmentLabel(true);
+    emit ShowSplinePathSegmentLabel(true);
+
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
     ui->view->AllowRubberBand(false);
@@ -8088,17 +8487,15 @@ void MainWindow::ToolSelectAllDrawObjects()
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::ToolSelectOperationObjects()
 {
-    // Only true for rubber band selection
-    emit EnableLabelSelection(true);
-    emit EnablePointSelection(true);
+    emit EnableLabelSelection(false);
+    emit EnablePointSelection(false);
     emit EnableLineSelection(false);
-    emit EnableArcSelection(true);
-    emit EnableElArcSelection(true);
-    emit EnableSplineSelection(true);
-    emit EnableSplinePathSelection(true);
+    emit EnableArcSelection(false);
+    emit EnableElArcSelection(false);
+    emit EnableSplineSelection(false);
+    emit EnableSplinePathSelection(false);
     emit EnableBackgroundImageSelection(false);
 
-    // Hovering
     emit EnableLabelHover(true);
     emit EnablePointHover(true);
     emit EnableLineHover(false);
@@ -8108,20 +8505,47 @@ void MainWindow::ToolSelectOperationObjects()
     emit EnableSplinePathHover(true);
     emit EnableImageBackgroundHover(false);
 
+    emit ShowArcSegmentLabel(true);
+    emit ShowElArcSegmentLabel(true);
+    emit ShowSplineSegmentLabel(true);
+    emit ShowSplinePathSegmentLabel(true);
+
     emit ItemsSelection(SelectionType::ByMouseRelease);
 
-    ui->view->AllowRubberBand(true);
+    ui->view->AllowCustomRubberBand(true);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void MainWindow::ToolSelectGroupObjects()
 {
-    ToolSelectOperationObjects();
     // Only true for rubber band selection
+    emit EnableLabelSelection(true);
+    emit EnablePointSelection(true);
     emit EnableLineSelection(true);
+    emit EnableArcSelection(true);
+    emit EnableElArcSelection(true);
+    emit EnableSplineSelection(true);
+    emit EnableSplinePathSelection(true);
+    emit EnableBackgroundImageSelection(false);
 
     // Hovering
+    emit EnableLabelHover(true);
+    emit EnablePointHover(true);
     emit EnableLineHover(true);
+    emit EnableArcHover(true);
+    emit EnableElArcHover(true);
+    emit EnableSplineHover(true);
+    emit EnableSplinePathHover(true);
+    emit EnableImageBackgroundHover(false);
+
+    emit ShowArcSegmentLabel(false);
+    emit ShowElArcSegmentLabel(false);
+    emit ShowSplineSegmentLabel(false);
+    emit ShowSplinePathSegmentLabel(false);
+
+    emit ItemsSelection(SelectionType::ByMouseRelease);
+
+    ui->view->AllowRubberBand(true);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -8202,4 +8626,100 @@ void MainWindow::OpenWatermark(const QString &path)
     m_watermarkEditors.append(watermark);
     watermark->show();
     watermark->Open(path);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::AutoArrangeLabels(QPoint globalPos)
+{
+    if (m_currentTool != Tool::Arrow)
+    {
+        return;
+    }
+
+    QMenu menu;
+    if (QAction const *arrangeAction =
+            menu.addAction(FromTheme(VThemeIcon::FormatJustifyCenter), tr("Auto-Arrange Labels"));
+            menu.exec(globalPos) != arrangeAction)
+    {
+        return;
+    }
+
+    RunAutoArrangeLabels();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void MainWindow::RunAutoArrangeLabels()
+{
+    if (m_currentTool != Tool::Arrow)
+    {
+        return;
+    }
+
+    VMainGraphicsScene *const activeScene = m_drawMode ? m_sceneDraw : m_sceneDetails;
+    auto [arrangeData, requests] = VDrawLabelCollector::Collect(activeScene);
+
+    if (arrangeData.isEmpty())
+    {
+        return;
+    }
+
+    // Run the placement engine on a worker thread so the UI stays alive (progress bar animates).
+    // setEnabled(false) blocks mouse/keyboard input to prevent re-entrant invocations.
+    m_progressBar->setRange(0, 0); // indeterminate spinner
+    m_progressBar->setValue(0);
+    m_statusLabel->setVisible(false);
+    m_progressBar->setVisible(true);
+    setEnabled(false);
+
+    // Structured-binding names cannot be captured by name in lambdas (Clang limitation),
+    // so copy to a regular named variable first.
+    const QVector<LabelArrangeData> labelData = arrangeData;
+
+    QFutureWatcher<QVector<QPointF>> watcher;
+    QEventLoop loop;
+    QObject::connect(&watcher, &QFutureWatcher<QVector<QPointF>>::finished, &loop, &QEventLoop::quit);
+    watcher.setFuture(QtConcurrent::run([&labelData]() { return VLabelArrangeEngine::Arrange(labelData); }));
+    loop.exec();
+
+    setEnabled(true);
+    m_progressBar->setVisible(false);
+    m_statusLabel->setVisible(true);
+
+    const QVector<QPointF> newOffsets = watcher.result();
+
+    QUndoStack *const undoStack = VAbstractApplication::VApp()->getUndoStack();
+    undoStack->beginMacro(tr("Auto-arrange labels"));
+
+    for (int i = 0; i < requests.size(); ++i)
+    {
+        const QPointF newOff = newOffsets.at(i);
+        const QPointF curOff = arrangeData.at(i).currentOffset;
+        if (qAbs(newOff.x() - curOff.x()) < 0.1 && qAbs(newOff.y() - curOff.y()) < 0.1)
+        {
+            continue;
+        }
+
+        const LabelMoveRequest &req = requests.at(i);
+        switch (req.kind)
+        {
+            case LabelMoveRequest::Kind::Point:
+                undoStack->push(new MoveLabel(doc, newOff, req.toolId));
+                break;
+            case LabelMoveRequest::Kind::Double:
+                undoStack->push(new MoveDoubleLabel(doc, newOff, static_cast<MoveDoublePoint>(req.extraIdx),
+                                                    req.toolId, req.pointId));
+                break;
+            case LabelMoveRequest::Kind::Operation:
+                undoStack->push(new OperationMoveLabel(req.toolId, doc, newOff, req.pointId));
+                break;
+            case LabelMoveRequest::Kind::Segment:
+                undoStack->push(new MoveSegmentLabel(doc, newOff, req.toolId,
+                                                     static_cast<SegmentLabel>(req.extraIdx)));
+                break;
+            default:
+                break;
+        }
+    }
+
+    undoStack->endMacro();
 }

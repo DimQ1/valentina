@@ -43,12 +43,12 @@
 #include "../vpatterndb/vpiece.h"
 #include "ui_dialogeditlabel.h"
 #include "vabstractvalapplication.h"
+#include "vscrollablemenu.h"
 #include "vvalentinasettings.h"
 
 #include <QDate>
 #include <QDir>
 #include <QFileDialog>
-#include <QMenu>
 #include <QMessageBox>
 
 using namespace Qt::Literals::StringLiterals;
@@ -84,7 +84,7 @@ auto FileBaseName(const QString &filePath) -> QString
 DialogEditLabel::DialogEditLabel(const VAbstractPattern *doc, const VContainer *data, QWidget *parent)
   : QDialog(parent),
     ui(new Ui::DialogEditLabel),
-    m_placeholdersMenu(new QMenu(this)),
+    m_placeholdersMenu(new VScrollableMenu(this)),
     m_doc(doc),
     m_data(data)
 {
@@ -120,8 +120,6 @@ DialogEditLabel::DialogEditLabel(const VAbstractPattern *doc, const VContainer *
     InitPlaceholdersMenu();
     QApplication::restoreOverrideCursor();
 
-    m_placeholdersMenu->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
-    m_placeholdersMenu->setToolTipsVisible(true);
     ui->pushButtonInsert->setMenu(m_placeholdersMenu);
     ui->pushButtonInsert->setProperty("hasMenu", true);
     ui->pushButtonInsert->style()->unpolish(ui->pushButtonInsert);
@@ -525,7 +523,7 @@ void DialogEditLabel::InitPlaceholdersMenu()
     auto i = sortedActions.constBegin();
     while (i != sortedActions.constEnd())
     {
-        QAction *action = m_placeholdersMenu->addAction(i.key());
+        QAction *action = m_placeholdersMenu->AddAction(i.key());
         action->setData(i.value());
         action->setToolTip(i.value());
         connect(action, &QAction::triggered, this, &DialogEditLabel::InsertPlaceholder);

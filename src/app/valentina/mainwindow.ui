@@ -121,6 +121,7 @@
     <addaction name="actionLast_tool"/>
     <addaction name="actionInteractiveTools"/>
     <addaction name="actionShowCurveDetails"/>
+    <addaction name="actionShowSegmentLabels"/>
     <addaction name="actionShowMainPath"/>
     <addaction name="actionBoundaryTogetherWithNotches"/>
     <addaction name="actionShowAccuracyRadius"/>
@@ -128,6 +129,7 @@
     <addaction name="actionAddBackgroundImage"/>
     <addaction name="separator"/>
     <addaction name="actionReloadLabels"/>
+    <addaction name="actionAutoArrangeLabels"/>
    </widget>
    <widget class="QMenu" name="menuMeasurements">
     <property name="title">
@@ -190,6 +192,7 @@
    <addaction name="menuWatermark"/>
    <addaction name="menuManual_Layout"/>
    <addaction name="menuWindow"/>
+   <addaction name="menuHistory"/>
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QToolBar" name="mainToolBar">
@@ -1163,6 +1166,26 @@
    </property>
    <property name="shortcut">
     <string notr="true">F2</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
+  <action name="actionShowSegmentLabels">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Show Segment Labels</string>
+   </property>
+   <property name="toolTip">
+    <string>Allow segment labels to appear. Uncheck to hide them in all cases.</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>
@@ -2617,6 +2640,23 @@
     <enum>QAction::MenuRole::NoRole</enum>
    </property>
   </action>
+  <action name="actionAutoArrangeLabels">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset theme="format-justify-center"/>
+   </property>
+   <property name="text">
+    <string>Auto-arrange labels</string>
+   </property>
+   <property name="toolTip">
+    <string>Auto-arrange point labels to reduce overlaps</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::NoRole</enum>
+   </property>
+  </action>
   <action name="actionInstallSingleLineFont">
    <property name="enabled">
     <bool>true</bool>
@@ -2650,6 +2690,9 @@
    <property name="checkable">
     <bool>true</bool>
    </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="icon">
     <iconset resource="share/resources/toolicon.qrc">
      <normaloff>:/toolicon/light/parallel_curve.png</normaloff>:/toolicon/light/parallel_curve.png</iconset>
@@ -2664,6 +2707,9 @@
   <action name="actionGraduatedCurveTool">
    <property name="checkable">
     <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
    </property>
    <property name="icon">
     <iconset resource="share/resources/toolicon.qrc">

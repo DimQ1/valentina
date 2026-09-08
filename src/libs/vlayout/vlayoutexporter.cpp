@@ -27,7 +27,10 @@
  *************************************************************************/
 #include "vlayoutexporter.h"
 
+#include <QBuffer>
 #include <QCursor>
+#include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
@@ -163,9 +166,23 @@ void VLayoutExporter::ExportToSVG(QGraphicsScene *scene, const QList<QGraphicsIt
 
     PrepareGrainlineForExport(details, m_showGrainline);
 
-    QSvgGenerator generator;
-    generator.setFileName(m_fileName);
+    if (!details.isEmpty())
+    {
+        ExportPiecesAsSvgLayers(scene, details);
+    }
+    else
+    {
+        QSvgGenerator generator;
+        generator.setFileName(m_fileName);
+        RenderSVG(generator, scene);
+    }
 
+    RestoreGrainlineAfterExport(details);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VLayoutExporter::RenderSVG(QSvgGenerator &generator, QGraphicsScene *scene) const
+{
     QSize drawingSize;
     drawingSize.setWidth(qFloor(m_imageRect.width() * m_xScale + m_margins.left() + m_margins.right()));
     drawingSize.setHeight(qFloor(m_imageRect.height() * m_yScale + m_margins.top() + m_margins.bottom()));
@@ -190,13 +207,93 @@ void VLayoutExporter::ExportToSVG(QGraphicsScene *scene, const QList<QGraphicsIt
     painter.scale(m_xScale, m_yScale);
     scene->render(&painter, m_imageRect, m_imageRect, Qt::IgnoreAspectRatio);
     painter.end();
+}
 
-    RestoreGrainlineAfterExport(details);
+//---------------------------------------------------------------------------------------------------------------------
+void VLayoutExporter::ExportPiecesAsSvgLayers(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const
+{
+    QDomDocument svg;
+    svg.appendChild(svg.createProcessingInstruction(
+        QStringLiteral("xml"), QStringLiteral(R"(version="1.0" encoding="UTF-8" standalone="no")")));
+    QDomElement root;
+
+    for (int i = 0; i < details.size(); ++i)
+    {
+        for (auto *item : details)
+        {
+            item->setVisible(item == details.at(i));
+        }
+
+        QBuffer buffer;
+        buffer.open(QIODevice::WriteOnly);
+
+        QSvgGenerator generator;
+        generator.setOutputDevice(&buffer);
+        RenderSVG(generator, scene);
+        buffer.close();
+
+        QDomDocument pieceDoc;
+        pieceDoc.setContent(buffer.data());
+        QDomElement const pieceRoot = pieceDoc.documentElement();
+
+        if (root.isNull())
+        {
+            root = svg.importNode(pieceRoot, false).toElement();
+            root.setAttribute(QStringLiteral("xmlns:inkscape"),
+                              QStringLiteral("http://www.inkscape.org/namespaces/inkscape"));
+            svg.appendChild(root);
+        }
+
+        QString name = details.at(i)->data(LayoutPieceNameDataRole).toString();
+        if (name.isEmpty())
+        {
+            name = tr("Piece %1").arg(i + 1);
+        }
+
+        QDomElement layer = svg.createElement(QStringLiteral("g"));
+        layer.setAttribute(QStringLiteral("id"), QStringLiteral("layer%1").arg(i + 1));
+        layer.setAttribute(QStringLiteral("inkscape:groupmode"), QStringLiteral("layer"));
+        layer.setAttribute(QStringLiteral("inkscape:label"), name);
+
+        for (QDomNode node = pieceRoot.firstChild(); !node.isNull(); node = node.nextSibling())
+        {
+            const QString tag = node.toElement().tagName();
+            if (tag == "title"_L1 || tag == "desc"_L1)
+            {
+                if (i == 0)
+                {
+                    root.appendChild(svg.importNode(node, true));
+                }
+            }
+            else
+            {
+                layer.appendChild(svg.importNode(node, true));
+            }
+        }
+
+        root.appendChild(layer);
+    }
+
+    for (auto *item : details)
+    {
+        item->setVisible(true);
+    }
+
+    QFile file(m_fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        qCritical() << qUtf8Printable(tr("Can't create file '%1'. %2").arg(m_fileName, file.errorString()));
+        return;
+    }
+    file.write(svg.toByteArray());
+    file.close();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToPNG(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const
 {
+    qDebug("VLayoutExporter::ExportToPNG: Exporting to PNG");
+
     PrepareGrainlineForExport(details, m_showGrainline);
 
     // Create the image with the exact size of the shrunk scene
@@ -205,6 +302,15 @@ void VLayoutExporter::ExportToPNG(QGraphicsScene *scene, const QList<QGraphicsIt
     drawingSize.setHeight(qFloor(m_imageRect.height() * m_yScale + m_margins.top() + m_margins.bottom()));
 
     QImage image(drawingSize, QImage::Format_ARGB32);
+    if (image.isNull())
+    {
+        qCritical() << qUtf8Printable(tr("Can't create an image %1x%2 for '%3'. The image is too large or empty.")
+                                          .arg(drawingSize.width())
+                                          .arg(drawingSize.height())
+                                          .arg(m_fileName));
+        RestoreGrainlineAfterExport(details);
+        return;
+    }
     image.fill(Qt::white);
 
     QPainter painter(&image);
@@ -223,6 +329,8 @@ void VLayoutExporter::ExportToPNG(QGraphicsScene *scene, const QList<QGraphicsIt
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToTIF(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const
 {
+    qDebug("VLayoutExporter::ExportToTIF: Exporting to TIF");
+
     PrepareGrainlineForExport(details, m_showGrainline);
 
     // Create the image with the exact size of the shrunk scene
@@ -231,6 +339,15 @@ void VLayoutExporter::ExportToTIF(QGraphicsScene *scene, const QList<QGraphicsIt
     drawingSize.setHeight(qFloor(m_imageRect.height() * m_yScale + m_margins.top() + m_margins.bottom()));
 
     QImage image(drawingSize, QImage::Format_ARGB32);
+    if (image.isNull())
+    {
+        qCritical() << qUtf8Printable(tr("Can't create an image %1x%2 for '%3'. The image is too large or empty.")
+                                          .arg(drawingSize.width())
+                                          .arg(drawingSize.height())
+                                          .arg(m_fileName));
+        RestoreGrainlineAfterExport(details);
+        return;
+    }
     image.fill(Qt::white);
 
     QPainter painter(&image);
@@ -282,6 +399,8 @@ void VLayoutExporter::ExportToOBJ(QGraphicsScene *scene) const
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToPS(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const
 {
+    qDebug("VLayoutExporter::ExportToPS: Exporting to PS");
+
     QTemporaryFile tmp;
     if (tmp.open())
     {
@@ -294,6 +413,8 @@ void VLayoutExporter::ExportToPS(QGraphicsScene *scene, const QList<QGraphicsIte
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToEPS(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const
 {
+    qDebug("VLayoutExporter::ExportToEPS: Exporting to EPS");
+
     QTemporaryFile tmp;
     if (tmp.open())
     {
@@ -337,6 +458,8 @@ void VLayoutExporter::ExportToFlatDXF(QGraphicsScene *scene, const QList<QGraphi
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToAAMADXF(const QVector<VLayoutPiece> &details) const
 {
+    qDebug("VLayoutExporter::ExportToAAMADXF: Exporting to AAMA DXF");
+
     VDxfPaintDevice generator;
     generator.SetFileName(m_fileName);
     generator.SetSize(QSize(qCeil(m_imageRect.width() * m_xScale), qCeil(m_imageRect.height() * m_yScale)));
@@ -357,6 +480,8 @@ void VLayoutExporter::ExportToAAMADXF(const QVector<VLayoutPiece> &details) cons
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToASTMDXF(const QVector<VLayoutPiece> &details) const
 {
+    qDebug("VLayoutExporter::ExportToASTMDXF: Exporting to ASTM DXF");
+
     VDxfPaintDevice generator;
     generator.SetFileName(m_fileName);
     generator.SetSize(QSize(qCeil(m_imageRect.width() * m_xScale), qCeil(m_imageRect.height() * m_yScale)));
@@ -377,6 +502,8 @@ void VLayoutExporter::ExportToASTMDXF(const QVector<VLayoutPiece> &details) cons
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToRLD(const QVector<VLayoutPiece> &details) const
 {
+    qDebug("VLayoutExporter::ExportToRLD: Exporting to RLD");
+
     QVector<VLayoutPiece> scaledPieces;
     scaledPieces.reserve(details.size());
 
@@ -400,6 +527,8 @@ void VLayoutExporter::ExportToRLD(const QVector<VLayoutPiece> &details) const
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToHPGL(const QVector<VLayoutPiece> &details) const
 {
+    qDebug("VLayoutExporter::ExportToHPGL: Exporting to HPGL");
+
     VHPGLPaintDevice generator;
     generator.SetFileName(m_fileName);
     generator.SetSize(QSize(qCeil(m_imageRect.width() * m_xScale), qCeil(m_imageRect.height() * m_yScale)));
@@ -419,6 +548,8 @@ void VLayoutExporter::ExportToHPGL(const QVector<VLayoutPiece> &details) const
 //---------------------------------------------------------------------------------------------------------------------
 void VLayoutExporter::ExportToHPGL2(const QVector<VLayoutPiece> &details) const
 {
+    qDebug("VLayoutExporter::ExportToHPGL2: Exporting to HPGL2");
+
     VHPGLPaintDevice generator;
     generator.SetFileName(m_fileName);
     generator.SetSize(QSize(qCeil(m_imageRect.width() * m_xScale), qCeil(m_imageRect.height() * m_yScale)));
@@ -522,7 +653,7 @@ void VLayoutExporter::ExportToPDF(QGraphicsScene *scene,
     qreal const height = FromPixel(m_imageRect.height() * m_yScale + m_margins.top() + m_margins.bottom(), Unit::Mm);
 
     QSizeF const pageSize = imageOrientation == QPageLayout::Portrait ? QSizeF(width, height) : QSizeF(height, width);
-    if (not printer.setPageSize(QPageSize(pageSize, QPageSize::Millimeter)))
+    if (not printer.setPageSize(VPrintLayout::ResolvePageSize(pageSize, QPageSize::Millimeter)))
     {
         qWarning() << tr("Cannot set printer page size");
     }
@@ -536,7 +667,9 @@ void VLayoutExporter::ExportToPDF(QGraphicsScene *scene,
         const qreal right = FromPixel(m_margins.right(), Unit::Mm);
         const qreal bottom = FromPixel(m_margins.bottom(), Unit::Mm);
 
-        if (not printer.setPageMargins(QMarginsF(left, top, right, bottom), QPageLayout::Millimeter))
+        if (not VPrintLayout::SetPrinterMarginsWithFallback(&printer,
+                                                            QMarginsF(left, top, right, bottom),
+                                                            QPageLayout::Millimeter))
         {
             qWarning() << tr("Cannot set printer margins");
         }

@@ -30,6 +30,7 @@
 #include <chrono>
 #include <thread>
 #include <utility>
+#include <QBuffer>
 #include <QCloseEvent>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -60,6 +61,7 @@
 #include "../vmisc/projectversion.h"
 #include "../vmisc/theme/themeDef.h"
 #include "../vmisc/theme/vtheme.h"
+#include "../vmisc/vasyncfileio.h"
 #include "../vmisc/vsysexits.h"
 #include "../vwidgets/vmaingraphicsscene.h"
 #include "../vwidgets/vmousewheelwidgetadjustmentguard.h"
@@ -203,9 +205,9 @@ void SetPrinterSheetPageSettings(const QSharedPointer<QPrinter> &printer, const 
     qreal const width = FromPixel(imageRect.width() * xScale + margins.left() + margins.right(), Unit::Mm);
     qreal const height = FromPixel(imageRect.height() * yScale + margins.top() + margins.bottom(), Unit::Mm);
 
-    if (QSizeF const pageSize =
-            (sheetOrientation == QPageLayout::Portrait ? QSizeF(width, height) : QSizeF(height, width));
-        not printer->setPageSize(QPageSize(pageSize, QPageSize::Millimeter)))
+    if (QSizeF const pageSize = (sheetOrientation == QPageLayout::Portrait ? QSizeF(width, height)
+                                                                           : QSizeF(height, width));
+        not printer->setPageSize(VPrintLayout::ResolvePageSize(pageSize, QPageSize::Millimeter)))
     {
         qWarning() << QObject::tr("Cannot set printer page size");
     }
@@ -213,8 +215,10 @@ void SetPrinterSheetPageSettings(const QSharedPointer<QPrinter> &printer, const 
     printer->setPageOrientation(sheetOrientation);
     printer->setFullPage(sheet->IgnoreMargins());
 
-    if (not sheet->IgnoreMargins() &&
-        not printer->setPageMargins(UnitConvertor(margins, Unit::Px, Unit::Mm), QPageLayout::Millimeter))
+    if (not sheet->IgnoreMargins()
+        && not VPrintLayout::SetPrinterMarginsWithFallback(printer.data(),
+                                                           UnitConvertor(margins, Unit::Px, Unit::Mm),
+                                                           QPageLayout::Millimeter))
     {
         qWarning() << QObject::tr("Cannot set printer margins");
     }
@@ -253,7 +257,7 @@ void SetPrinterTiledPageSettings(const QSharedPointer<QPrinter> &printer, const 
         }
     }
 
-    if (not printer->setPageSize(QPageSize(pageSize, QPageSize::Millimeter)))
+    if (not printer->setPageSize(VPrintLayout::ResolvePageSize(pageSize, QPageSize::Millimeter)))
     {
         qWarning() << QObject::tr("Cannot set printer page size");
     }
@@ -261,10 +265,13 @@ void SetPrinterTiledPageSettings(const QSharedPointer<QPrinter> &printer, const 
     printer->setPageOrientation(orientation);
     printer->setFullPage(layout->LayoutSettings().IgnoreTilesMargins());
 
-    if (not layout->LayoutSettings().IgnoreTilesMargins() &&
-        not printer->setPageMargins(layout->LayoutSettings().GetTilesMargins(Unit::Mm), QPageLayout::Millimeter))
+    if (not layout->LayoutSettings().IgnoreTilesMargins())
     {
-        qWarning() << QObject::tr("Cannot set printer margins");
+        if (const QMarginsF margins = layout->LayoutSettings().GetTilesMargins(Unit::Mm);
+            not VPrintLayout::SetPrinterMarginsWithFallback(printer.data(), margins, QPageLayout::Millimeter))
+        {
+            qWarning() << QObject::tr("Cannot set printer margins");
+        }
     }
 }
 
@@ -294,6 +301,32 @@ auto IsValidFileName(const QString &fileName) -> bool
     // Check the length of the file name (adjust the limit as needed)
     if (fileName.length() > 255)
     {
+        return false;
+    }
+
+    return true;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto WriteLayoutData(const QString &path, const QByteArray &data, QString &error) -> bool
+{
+    QSaveFile file(path);
+    if (not file.open(QIODevice::WriteOnly))
+    {
+        error = file.errorString();
+        return false;
+    }
+
+    if (file.write(data) != data.size())
+    {
+        file.cancelWriting();
+        error = file.errorString();
+        return false;
+    }
+
+    if (not file.commit())
+    {
+        error = file.errorString();
         return false;
     }
 
@@ -542,7 +575,7 @@ auto VPMainWindow::LoadFile(const QString &path) -> bool
         }
 
         VCommonSettings  const*settings = VAbstractApplication::VApp()->Settings();
-        if (settings->IsCollectStatistic())
+        if (VPApplication::VApp()->IsAppInGUIMode() && settings->IsCollectStatistic())
         {
             auto *statistic = VGAnalytics::Instance();
 
@@ -638,31 +671,34 @@ void VPMainWindow::SetCurrentFile(const QString &fileName)
 //---------------------------------------------------------------------------------------------------------------------
 auto VPMainWindow::SaveLayout(const QString &path, QString &error) -> bool
 {
-    bool success = false;
-    QSaveFile file(path);
-    if (file.open(QIODevice::WriteOnly))
+    // Serialize into memory first: the writer walks the live layout, so it has to run on the GUI thread. Only the
+    // write itself goes to a worker - QSaveFile::commit() calls FlushFileBuffers, which a cloud-sync or antivirus
+    // filter driver can stall for seconds and freeze the whole window.
+    QByteArray data;
     {
+        QBuffer buffer(&data);
+        buffer.open(QIODevice::WriteOnly);
+
         VPLayoutFileWriter fileWriter;
-        fileWriter.WriteFile(m_layout, &file);
+        fileWriter.WriteFile(m_layout, &buffer);
 
         if (fileWriter.hasError())
         {
             error = tr("Fail to create layout.");
             return false;
         }
-
-        success = file.commit();
     }
+
+    const bool success = VAsyncFileIO::RunFileOperation(tr("Saving %1…").arg(QFileInfo(path).fileName()),
+                                                        [path, data, &error]() -> bool
+                                                        { return WriteLayoutData(path, data, error); });
 
     if (success)
     {
         SetCurrentFile(path);
         LayoutWasSaved(true);
     }
-    else
-    {
-        error = file.errorString();
-    }
+
     return success;
 }
 
@@ -699,7 +735,7 @@ void VPMainWindow::SetupMenu()
     m_actionShortcuts.insert(VShortcutAction::SaveAs, ui->actionSaveAs);
 
     m_recentFileActs.fill(nullptr);
-    for (auto &recentFileAct : m_recentFileActs)
+    for (QAction *&recentFileAct : m_recentFileActs)
     {
         auto *action = new QAction(this);
         recentFileAct = action;
@@ -1280,6 +1316,17 @@ void VPMainWindow::InitPropertyTabTiles()
                     LayoutWasSaved(false);
                 }
             });
+    connect(ui->checkBoxPrintTextAsPaths,
+            &QCheckBox::toggled,
+            this,
+            [this](bool checked)
+            {
+                if (not m_layout.isNull())
+                {
+                    m_layout->LayoutSettings().SetPrintTextAsPaths(checked);
+                    LayoutWasSaved(false);
+                }
+            });
 
     connect(ui->checkBoxShowTileNumber, &QCheckBox::toggled, this,
             [this](bool checked)
@@ -1667,6 +1714,7 @@ void VPMainWindow::SetPropertyTabTilesData()
         SetCheckBoxValue(ui->checkBoxTilesShowTiles, m_layout->LayoutSettings().GetShowTiles());
         SetCheckBoxValue(ui->checkBoxTilesShowWatermark, m_layout->LayoutSettings().GetShowWatermark());
         SetCheckBoxValue(ui->checkBoxPrintTilesScheme, m_layout->LayoutSettings().GetPrintTilesScheme());
+        SetCheckBoxValue(ui->checkBoxPrintTextAsPaths, m_layout->LayoutSettings().GetPrintTextAsPaths());
         SetCheckBoxValue(ui->checkBoxShowTileNumber, m_layout->LayoutSettings().GetShowTileNumber());
     }
     else
@@ -1882,7 +1930,7 @@ void VPMainWindow::ReadSettings()
     if (settings->status() == QSettings::NoError)
     {
         restoreGeometry(settings->GetGeometry());
-        restoreState(settings->GetToolbarsState(), static_cast<int>(AppVersion()));
+        restoreState(settings->GetToolbarsState(), kToolbarStateVersion);
 
         // Text under tool buton icon
         ToolBarStyles();
@@ -1912,7 +1960,7 @@ void VPMainWindow::WriteSettings()
 {
     VPSettings *settings = VPApplication::VApp()->PuzzleSettings();
     settings->SetGeometry(saveGeometry());
-    settings->SetToolbarsState(saveState(static_cast<int>(AppVersion())));
+    settings->SetToolbarsState(saveState(kToolbarStateVersion));
 
     settings->SetDockWidgetPropertiesActive(ui->dockWidgetProperties->isEnabled());
     settings->SetDockWidgetPropertiesContentsActive(ui->dockWidgetPropertiesContents->isEnabled());
@@ -3205,7 +3253,8 @@ void VPMainWindow::PrintLayoutSheets(QPrinter *printer, const QList<VPSheetPtr> 
                 continue;
             }
 
-            if (not PrintLayoutSheetPage(printer, painter, sheet))
+            bool const isFirstPage = (i == 0 && j == 0);
+            if (not PrintLayoutSheetPage(printer, painter, sheet, isFirstPage))
             {
                 return;
             }
@@ -3214,23 +3263,25 @@ void VPMainWindow::PrintLayoutSheets(QPrinter *printer, const QList<VPSheetPtr> 
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-auto VPMainWindow::PrintLayoutSheetPage(QPrinter *printer, QPainter &painter, const VPSheetPtr &sheet) -> bool
+auto VPMainWindow::PrintLayoutSheetPage(QPrinter *printer, QPainter &painter, const VPSheetPtr &sheet, bool isFirstPage)
+    -> bool
 {
     SCASSERT(printer != nullptr)
 
     printer->setPageOrientation(sheet->GetSheetOrientation());
     printer->setFullPage(sheet->IgnoreMargins());
 
-    if (not sheet->IgnoreMargins())
+    if (not sheet->IgnoreMargins()
+        && not VPrintLayout::SetPrinterMarginsWithFallback(printer,
+                                                           UnitConvertor(sheet->GetSheetMargins(), Unit::Px, Unit::Mm),
+                                                           QPageLayout::Millimeter))
     {
-        if (QMarginsF const margins = sheet->GetSheetMargins();
-            not printer->setPageMargins(UnitConvertor(margins, Unit::Px, Unit::Mm), QPageLayout::Millimeter))
-        {
-            qWarning() << QObject::tr("Cannot set printer margins");
-        }
+        qWarning() << QObject::tr("Cannot set printer margins");
     }
 
-    if (not printer->newPage())
+    // Only advance to a new page if this isn't the very first page —
+    // QPainter::begin() already opened page 1.
+    if (not isFirstPage && not printer->newPage())
     {
         qCritical() << tr("Failed in flushing page to disk, disk full?");
         return false;
@@ -3307,11 +3358,14 @@ auto VPMainWindow::PrepareLayoutTilePages(const QList<VPSheetPtr> &sheets) -> QV
 
     for (const auto &sheet : sheets)
     {
+        const bool textAsPaths = m_layout->LayoutSettings().GetPrintTextAsPaths();
+
         if (m_layout->LayoutSettings().GetPrintTilesScheme())
         {
             VPLayoutPrinterPage item{};
             item.sheet = sheet;
             item.tilesScheme = true;
+            item.textAsPaths = textAsPaths;
             pages.append(item);
         }
 
@@ -3321,6 +3375,7 @@ auto VPMainWindow::PrepareLayoutTilePages(const QList<VPSheetPtr> &sheets) -> QV
             {
                 VPLayoutPrinterPage item{};
                 item.sheet = sheet;
+                item.textAsPaths = textAsPaths;
                 item.tileRow = row;
                 item.tileCol = col;
                 pages.append(item);
@@ -3335,15 +3390,14 @@ auto VPMainWindow::PrepareLayoutTilePages(const QList<VPSheetPtr> &sheets) -> QV
 auto VPMainWindow::PrintLayoutTiledSheetPage(QPrinter *printer, QPainter &painter, const VPLayoutPrinterPage &page,
                                              bool firstPage) -> bool
 {
-    qCDebug(pWindow, "VPMainWindow::PrintLayoutTiledSheetPage: Printing layout tiled sheets page");
-
     page.sheet->SceneData()->PrepareForExport(LayoutExportFormats::PDFTiled);
 
     const VCommonSettings *settings = VAbstractApplication::VApp()->Settings();
-    page.sheet->SceneData()->SetTextAsPaths(settings->GetSingleLineFonts() || settings->GetSingleStrokeOutlineFont());
+    page.sheet->SceneData()->SetTextAsPaths(page.textAsPaths || settings->GetSingleLineFonts()
+                                            || settings->GetSingleStrokeOutlineFont());
 
     auto clean = qScopeGuard(
-        [page]()
+        [page]() -> void
         {
             page.sheet->SceneData()->SetTextAsPaths(false);
             page.sheet->SceneData()->CleanAfterExport();
@@ -3381,21 +3435,22 @@ auto VPMainWindow::PrintLayoutTiledSheetPage(QPrinter *printer, QPainter &painte
         m_layout->TileFactory()->InitTileSingleStrokeOutlineFont();
     }
 
+    bool needNewPage = !firstPage;
     if (page.tilesScheme)
     {
-        if (not DrawTilesScheme(printer, &painter, page.sheet, firstPage))
+        if (!DrawTilesScheme(printer, &painter, page.sheet, firstPage))
         {
             return false;
         }
 
-        firstPage = false;
+        needNewPage = false;
     }
 
-    if (not firstPage)
+    if (needNewPage)
     {
         printer->setPageOrientation(m_layout->LayoutSettings().GetTilesOrientation());
 
-        if (not printer->newPage())
+        if (!printer->newPage())
         {
             qWarning("failed in flushing page to disk, disk full?");
             return false;

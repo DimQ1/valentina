@@ -75,6 +75,9 @@ DialogSpline::DialogSpline(const VContainer *data, VAbstractPattern *doc, quint3
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxP1);
+    MakeFilterableComboBox(ui->comboBoxP4);
+
     formulaBaseHeightAngle1 = ui->plainTextEditAngle1F->height();
     formulaBaseHeightAngle2 = ui->plainTextEditAngle2F->height();
     formulaBaseHeightLength1 = ui->plainTextEditLength1F->height();
@@ -134,7 +137,7 @@ DialogSpline::DialogSpline(const VContainer *data, VAbstractPattern *doc, quint3
 
     connect(ui->lineEditAlias, &QLineEdit::textEdited, this, &DialogSpline::ValidateAlias);
 
-    vis = new VisToolSpline(data);
+    vis = new VisToolSpline(&this->data);
     auto *path = qobject_cast<VisToolSpline *>(vis);
     SCASSERT(path != nullptr)
 
@@ -202,7 +205,7 @@ void DialogSpline::SaveData()
     if (!m_oldName.isEmpty() && m_oldName != spl.name())
     {
         spl.SetDuplicate(0);
-        if (!data->IsUnique(spl.name()))
+        if (!data.IsUnique(spl.name()))
         {
             spl.SetDuplicate(DNumber(spl.name()));
             m_oldName = spl.name();
@@ -279,7 +282,7 @@ void DialogSpline::DeployLength2TextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogSpline::FXAngle1()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit first control point angle"));
     QString angle1F = VTranslateVars::TryFormulaFromUser(ui->plainTextEditAngle1F->toPlainText(),
                                                          VAbstractApplication::VApp()->Settings()->GetOsSeparator());
@@ -303,7 +306,7 @@ void DialogSpline::FXAngle1()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogSpline::FXAngle2()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit second control point angle"));
     QString angle2F = VTranslateVars::TryFormulaFromUser(ui->plainTextEditAngle2F->toPlainText(),
                                                          VAbstractApplication::VApp()->Settings()->GetOsSeparator());
@@ -327,7 +330,7 @@ void DialogSpline::FXAngle2()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogSpline::FXLength1()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit first control point length"));
     QString length1F = VTranslateVars::TryFormulaFromUser(ui->plainTextEditLength1F->toPlainText(),
                                                           VAbstractApplication::VApp()->Settings()->GetOsSeparator());
@@ -351,7 +354,7 @@ void DialogSpline::FXLength1()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogSpline::FXLength2()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit second control point length"));
     QString length2F = VTranslateVars::TryFormulaFromUser(ui->plainTextEditLength2F->toPlainText(),
                                                           VAbstractApplication::VApp()->Settings()->GetOsSeparator());
@@ -375,20 +378,20 @@ void DialogSpline::FXLength2()
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogSpline::GetP1() const -> QSharedPointer<VPointF>
 {
-    return data->GeometricObject<VPointF>(getCurrentObjectId(ui->comboBoxP1));
+    return data.GeometricObject<VPointF>(getCurrentObjectId(ui->comboBoxP1));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogSpline::GetP4() const -> QSharedPointer<VPointF>
 {
-    return data->GeometricObject<VPointF>(getCurrentObjectId(ui->comboBoxP4));
+    return data.GeometricObject<VPointF>(getCurrentObjectId(ui->comboBoxP4));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void DialogSpline::EvalAngle1()
 {
     Eval({.formula = ui->plainTextEditAngle1F->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditAngle1,
           .labelResult = ui->labelResultAngle1,
           .postfix = degreeSymbol},
@@ -399,7 +402,7 @@ void DialogSpline::EvalAngle1()
 void DialogSpline::EvalAngle2()
 {
     Eval({.formula = ui->plainTextEditAngle2F->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditAngle2,
           .labelResult = ui->labelResultAngle2,
           .postfix = degreeSymbol},
@@ -410,7 +413,7 @@ void DialogSpline::EvalAngle2()
 void DialogSpline::EvalLength1()
 {
     Eval({.formula = ui->plainTextEditLength1F->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditLength1,
           .labelResult = ui->labelResultLength1,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true),
@@ -422,7 +425,7 @@ void DialogSpline::EvalLength1()
 void DialogSpline::EvalLength2()
 {
     Eval({.formula = ui->plainTextEditLength2F->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditLength2,
           .labelResult = ui->labelResultLength2,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true),
@@ -439,7 +442,7 @@ void DialogSpline::ValidateAlias()
     if (QRegularExpression const rx(NameRegExp());
         !ui->lineEditAlias->text().isEmpty()
         && (!rx.match(spline.GetAlias()).hasMatch()
-            || (originAliasSuffix != ui->lineEditAlias->text() && !data->IsUnique(spline.GetAlias()))))
+            || (originAliasSuffix != ui->lineEditAlias->text() && !data.IsUnique(spline.GetAlias()))))
     {
         flagAlias = false;
         ChangeColor(ui->labelAlias, errorColor);
@@ -461,7 +464,7 @@ void DialogSpline::SaveSpline()
     QString length1F = ui->plainTextEditLength1F->toPlainText();
     QString length2F = ui->plainTextEditLength2F->toPlainText();
 
-    const QHash<QString, QSharedPointer<VInternalVariable>> *vars = data->DataVariables();
+    const auto *vars = data.DataVariables();
 
     const qreal angle1 = Visualization::FindValFromUser(angle1F, vars);
     const qreal angle2 = Visualization::FindValFromUser(angle2F, vars);
@@ -543,7 +546,7 @@ void DialogSpline::ShowDialog(bool click)
         ui->plainTextEditLength1F->setPlainText(trVars->FormulaToUser(spl.GetC1LengthFormula(), osSeparator));
         ui->plainTextEditLength2F->setPlainText(trVars->FormulaToUser(spl.GetC2LengthFormula(), osSeparator));
 
-        if (not data->IsUnique(spl.name()))
+        if (not data.IsUnique(spl.name()))
         {
             spl.SetDuplicate(DNumber(spl.name()));
         }

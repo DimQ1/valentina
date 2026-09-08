@@ -68,6 +68,8 @@ DialogArc::DialogArc(const VContainer *data, VAbstractPattern *doc, quint32 tool
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxBasePoint);
+
     ui->doubleSpinBoxApproximationScale->setMaximum(maxCurveApproximationScale);
 
     this->m_formulaBaseHeight = ui->plainTextEditFormula->height();
@@ -115,7 +117,7 @@ DialogArc::DialogArc(const VContainer *data, VAbstractPattern *doc, quint32 tool
 
     connect(ui->lineEditAlias, &QLineEdit::textEdited, this, &DialogArc::ValidateAlias);
 
-    vis = new VisToolArc(data);
+    vis = new VisToolArc(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -176,9 +178,14 @@ void DialogArc::SetF2(const QString &value)
     }
     ui->plainTextEditF2->setPlainText(m_f2);
 
-    auto *path = qobject_cast<VisToolArc *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetF2(m_f2);
+    if (auto *path = qobject_cast<VisToolArc *>(vis))
+    {
+        path->SetF2(m_f2);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditF2);
 }
@@ -270,7 +277,7 @@ void DialogArc::ShowDialog(bool click)
             /*We will ignore click if pointer is in point circle*/
             auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
             SCASSERT(scene != nullptr)
-            const QSharedPointer<VPointF> point = data->GeometricObject<VPointF>(GetCenter());
+            const QSharedPointer<VPointF> point = data.GeometricObject<VPointF>(GetCenter());
             auto const line = QLineF(static_cast<QPointF>(*point), scene->getScenePos());
 
             auto Angle = [&line]()
@@ -341,9 +348,14 @@ void DialogArc::SetF1(const QString &value)
     }
     ui->plainTextEditF1->setPlainText(m_f1);
 
-    auto *path = qobject_cast<VisToolArc *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetF1(m_f1);
+    if (auto *path = qobject_cast<VisToolArc *>(vis))
+    {
+        path->SetF1(m_f1);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditF1);
 }
@@ -364,9 +376,14 @@ void DialogArc::SetRadius(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(m_radius);
 
-    auto *path = qobject_cast<VisToolArc *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetRadius(m_radius);
+    if (auto *path = qobject_cast<VisToolArc *>(vis))
+    {
+        path->SetRadius(m_radius);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
@@ -460,7 +477,7 @@ void DialogArc::ValidateAlias()
     if (QRegularExpression const rx(NameRegExp());
         not GetAliasSuffix().isEmpty() &&
         (not rx.match(arc.GetAlias()).hasMatch() ||
-         (m_originAliasSuffix != GetAliasSuffix() && not data->IsUnique(arc.GetAlias()))))
+         (m_originAliasSuffix != GetAliasSuffix() && not data.IsUnique(arc.GetAlias()))))
     {
         m_flagAlias = false;
         ChangeColor(ui->labelAlias, errorColor);
@@ -477,7 +494,7 @@ void DialogArc::ValidateAlias()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogArc::FXRadius()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit radius"));
     dialog->SetFormula(GetRadius());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -491,7 +508,7 @@ void DialogArc::FXRadius()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogArc::FXF1()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit first angle"));
     dialog->SetFormula(GetF1());
     dialog->setPostfix(degreeSymbol);
@@ -505,7 +522,7 @@ void DialogArc::FXF1()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogArc::FXF2()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit second angle"));
     dialog->SetFormula(GetF2());
     dialog->setPostfix(degreeSymbol);
@@ -523,7 +540,7 @@ void DialogArc::FXF2()
 void DialogArc::EvalRadius()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditRadius,
           .labelResult = ui->labelResultRadius,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -537,14 +554,14 @@ void DialogArc::EvalRadius()
 void DialogArc::EvalF()
 {
     m_angleF1 = Eval({.formula = ui->plainTextEditF1->toPlainText(),
-                      .variables = data->DataVariables(),
+                      .variables = data.DataVariables(),
                       .labelEditFormula = ui->labelEditF1,
                       .labelResult = ui->labelResultF1,
                       .postfix = degreeSymbol},
                      m_flagF1);
 
     m_angleF2 = Eval({.formula = ui->plainTextEditF2->toPlainText(),
-                      .variables = data->DataVariables(),
+                      .variables = data.DataVariables(),
                       .labelEditFormula = ui->labelEditF2,
                       .labelResult = ui->labelResultF2,
                       .postfix = degreeSymbol},

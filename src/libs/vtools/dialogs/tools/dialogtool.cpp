@@ -84,12 +84,12 @@ QT_WARNING_POP
 //---------------------------------------------------------------------------------------------------------------------
 /**
  * @brief DialogTool create dialog
- * @param data container with data
+ * @param patternData container with data
  * @param parent parent widget
  */
-DialogTool::DialogTool(const VContainer *data, VAbstractPattern *doc, quint32 toolId, QWidget *parent)
+DialogTool::DialogTool(const VContainer *patternData, VAbstractPattern *doc, quint32 toolId, QWidget *parent)
   : QDialog(parent),
-    data(data),
+    data(*patternData),
     m_doc(doc),
     isInitialized(false),
     bOk(nullptr),
@@ -99,13 +99,15 @@ DialogTool::DialogTool(const VContainer *data, VAbstractPattern *doc, quint32 to
     prepare(false),
     vis(nullptr)
 {
-    SCASSERT(data != nullptr);
+    SCASSERT(patternData != nullptr);
     SCASSERT(doc != nullptr);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 DialogTool::~DialogTool()
 {
+    qCDebug(vDialog) << "~DialogTool: vis=" << static_cast<void *>(vis.data())
+                     << "isNull=" << vis.isNull();
     delete vis.data();
 }
 
@@ -143,7 +145,6 @@ void DialogTool::showEvent(QShowEvent *event)
 
     isInitialized = true; // first show windows are held
     ShowVisualization();
-
     CheckState();
 }
 
@@ -170,7 +171,7 @@ void DialogTool::FillComboBoxPiecesList(QComboBox *box, const QVector<quint32> &
         box->clear();
         for (auto id : list)
         {
-            box->addItem(data->GetPiece(id).GetName(), id);
+            box->addItem(data.GetPiece(id).GetName(), id);
         }
     }
     box->setCurrentIndex(-1); // Force a user to choose
@@ -193,36 +194,36 @@ void DialogTool::FillComboBoxArcs(QComboBox *box, FillComboBox rule, quint32 ch1
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void DialogTool::FillComboBoxEllipticalArcs(QComboBox *box, FillComboBox rule, quint32 ch1, quint32 ch2) const
+{
+    FillCombo<VAbstractCurve>(box, GOType::EllipticalArc, rule, ch1, ch2);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void DialogTool::FillComboBoxArcCurves(QComboBox *box, FillComboBox rule, quint32 ch1, quint32 ch2) const
 {
     SCASSERT(box != nullptr)
     const QSignalBlocker blocker(box);
 
-    const QHash<quint32, QSharedPointer<VGObject>> *objs = data->CalculationGObjects();
+    const auto *objs = data.CalculationGObjects();
     QMap<QString, quint32> list;
-    for (auto i = objs->constBegin(); i != objs->constEnd(); ++i)
+    for (const auto &[id, obj] : *objs)
     {
         if (rule == FillComboBox::NoChildren)
         {
-            if (i.key() != toolId && i.value()->getIdTool() != toolId && i.key() != ch1 && i.key() != ch2)
+            if (id != toolId && obj->getIdTool() != toolId && id != ch1 && id != ch2
+                && (obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc))
             {
-                const QSharedPointer<VGObject> &obj = i.value();
-                if (obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc)
-                {
-                    PrepareList<VAbstractCurve>(list, i.key());
-                }
+                PrepareList<VAbstractCurve>(list, id);
             }
         }
         else
         {
-            if (i.key() != toolId && i.value()->getIdTool() != toolId)
+            if (id != toolId && obj->getIdTool() != toolId
+                && (obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc)
+                && obj->getMode() == Draw::Calculation)
             {
-                const QSharedPointer<VGObject> &obj = i.value();
-                if ((obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc)
-                    && obj->getMode() == Draw::Calculation)
-                {
-                    PrepareList<VAbstractCurve>(list, i.key());
-                }
+                PrepareList<VAbstractCurve>(list, id);
             }
         }
     }
@@ -237,13 +238,13 @@ void DialogTool::FillComboBoxSplines(QComboBox *box) const
     SCASSERT(box != nullptr)
     const QSignalBlocker blocker(box);
 
-    const auto *const objs = data->CalculationGObjects();
+    const auto *const objs = data.CalculationGObjects();
     QMap<QString, quint32> list;
-    for (auto i = objs->constBegin(); i != objs->constEnd(); ++i)
+    for (const auto &[id, obj] : *objs)
     {
-        if (i.key() != toolId && IsSpline(i.value()))
+        if (id != toolId && obj->getIdTool() != toolId && IsSpline(obj))
         {
-            PrepareList<VAbstractCurve>(list, i.key());
+            PrepareList<VAbstractCurve>(list, id);
         }
     }
     FillList(box, list);
@@ -256,13 +257,13 @@ void DialogTool::FillComboBoxSplinesPath(QComboBox *box) const
     SCASSERT(box != nullptr)
     const QSignalBlocker blocker(box);
 
-    const auto *const objs = data->CalculationGObjects();
+    const auto *const objs = data.CalculationGObjects();
     QMap<QString, quint32> list;
-    for (auto i = objs->constBegin(); i != objs->constEnd(); ++i)
+    for (const auto &[id, obj] : *objs)
     {
-        if (i.key() != toolId && IsSplinePath(i.value()))
+        if (id != toolId && obj->getIdTool() != toolId && IsSplinePath(obj))
         {
-            PrepareList<VAbstractCurve>(list, i.key());
+            PrepareList<VAbstractCurve>(list, id);
         }
     }
     FillList(box, list);
@@ -273,21 +274,20 @@ void DialogTool::FillComboBoxSplinesPath(QComboBox *box) const
 void DialogTool::FillComboBoxCurves(QComboBox *box) const
 {
     SCASSERT(box != nullptr)
-    const auto *const objs = data->CalculationGObjects();
+    const auto *const objs = data.CalculationGObjects();
     QMap<QString, quint32> list;
-    for (auto i = objs->constBegin(); i != objs->constEnd(); ++i)
+    for (const auto &[id, obj] : *objs)
     {
-        if (i.key() == toolId)
+        if (id == toolId)
         {
             continue;
         }
 
-        if (QSharedPointer<VGObject> const &obj = i.value();
-            obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc || obj->getType() == GOType::Spline
+        if (obj->getType() == GOType::Arc || obj->getType() == GOType::EllipticalArc || obj->getType() == GOType::Spline
             || obj->getType() == GOType::SplinePath || obj->getType() == GOType::CubicBezier
             || obj->getType() == GOType::CubicBezierPath)
         {
-            PrepareList<VAbstractCurve>(list, i.key());
+            PrepareList<VAbstractCurve>(list, id);
         }
     }
     FillList(box, list);
@@ -341,7 +341,7 @@ auto DialogTool::DNumber(const QString &baseName) const -> quint32
     {
         ++num;
         name = baseName + u"_%1"_s.arg(num);
-    } while (not data->IsUnique(name));
+    } while (not data.IsUnique(name));
 
     return num;
 }
@@ -354,12 +354,12 @@ void DialogTool::NewNodeItem(QListWidget *listWidget, const VPieceNode &node, bo
     QString name;
     switch (node.GetTypeTool())
     {
-        case (Tool::NodePoint):
-        case (Tool::NodeArc):
-        case (Tool::NodeElArc):
-        case (Tool::NodeSpline):
-        case (Tool::NodeSplinePath):
-            name = GetNodeName(data, node, showPassmark);
+        case Tool::NodePoint:
+        case Tool::NodeArc:
+        case Tool::NodeElArc:
+        case Tool::NodeSpline:
+        case Tool::NodeSplinePath:
+            name = GetNodeName(&data, node, showPassmark);
             break;
         default:
             qDebug() << "Got wrong tools. Ignore.";
@@ -578,28 +578,9 @@ auto DialogTool::SetObject(const quint32 &id, QComboBox *box, const QString &too
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-/**
- * @brief FillList fill combobox list
- * @param box combobox
- * @param list list with ids and names
- */
-void DialogTool::FillList(QComboBox *box, const QMap<QString, quint32> &list) const
-{
-    SCASSERT(box != nullptr)
-    box->clear();
-
-    QMapIterator iter(list);
-    while (iter.hasNext())
-    {
-        iter.next();
-        box->addItem(iter.key(), iter.value());
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
 template <typename T> void DialogTool::PrepareList(QMap<QString, quint32> &list, quint32 id) const
 {
-    const auto obj = data->GeometricObject<T>(id);
+    const auto obj = data.GeometricObject<T>(id);
     SCASSERT(obj != nullptr)
     list[obj->ObjectName()] = id;
 }
@@ -623,6 +604,27 @@ void DialogTool::CheckState()
     {
         bApply->setEnabled(bOk->isEnabled());
     }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief SceneObjectChosen guarded entry point for the scene's ChoosedObject signal. ChosenObject() overrides
+ * dereference vis without a null check (SCASSERT is a no-op in release builds), so ignore the event when a full
+ * reparse has already destroyed the visualization. See VisualizationBroken().
+ * @param id id of point or detail
+ * @param type type of object
+ */
+void DialogTool::SceneObjectChosen(quint32 id, const SceneObject &type)
+{
+    if (VisualizationBroken())
+    {
+        qCDebug(vDialog,
+                "Ignoring chosen object: the open tool dialog's visualization was destroyed by a reparse "
+                "(scene cleared). Nothing to select.");
+        return;
+    }
+
+    ChosenObject(id, type);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -698,6 +700,18 @@ void DialogTool::ShowDialog(bool click)
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+/**
+ * @brief VisualizationBroken true when this dialog expects a scene visualization but it has already been
+ * destroyed. This happens when a full reparse (e.g. deleting another tool while a creation dialog is open)
+ * clears the scene, which deletes the vis item; the QPointer then nulls itself. Callers must not forward
+ * scene events to ShowDialog() in that state - the overrides dereference vis and would crash.
+ */
+auto DialogTool::VisualizationBroken() const -> bool
+{
+    return UsesVisualization() && vis.isNull();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void DialogTool::Build(const Tool &type)
 {
     Q_UNUSED(type)
@@ -722,11 +736,13 @@ void DialogTool::SetAssociatedTool(VAbstractTool *tool)
     {
         associatedTool = tool;
         SetToolId(tool->getId());
-        data = tool->getData();
+        data = *tool->getData();
         if (not vis.isNull())
         {
-            vis->SetData(data);
+            vis->SetData(&data);
         }
+        RestoreTransientVariables();
+        ToolCommitted();
     }
     else
     {
@@ -743,30 +759,23 @@ void DialogTool::FillCombo(QComboBox *box, GOType gType, FillComboBox rule, cons
     SCASSERT(box != nullptr)
     const QSignalBlocker blocker(box);
 
-    const QHash<quint32, QSharedPointer<VGObject>> *objs = data->CalculationGObjects();
+    const auto *objs = data.CalculationGObjects();
     QMap<QString, quint32> list;
-    for (auto i = objs->constBegin(); i != objs->constEnd(); ++i)
+    for (const auto &[id, obj] : *objs)
     {
         if (rule == FillComboBox::NoChildren)
         {
-            if (i.key() != toolId && i.value()->getIdTool() != toolId && i.key() != ch1 && i.key() != ch2)
+            if (id != toolId && obj->getIdTool() != toolId && id != ch1 && id != ch2 && obj->getType() == gType)
             {
-                const QSharedPointer<VGObject> &obj = i.value();
-                if (obj->getType() == gType)
-                {
-                    PrepareList<GObject>(list, i.key());
-                }
+                PrepareList<GObject>(list, id);
             }
         }
         else
         {
-            if (i.key() != toolId && i.value()->getIdTool() != toolId)
+            if (id != toolId && obj->getIdTool() != toolId && obj->getType() == gType
+                && obj->getMode() == Draw::Calculation)
             {
-                const QSharedPointer<VGObject> &obj = i.value();
-                if (obj->getType() == gType && obj->getMode() == Draw::Calculation)
-                {
-                    PrepareList<GObject>(list, i.key());
-                }
+                PrepareList<GObject>(list, id);
             }
         }
     }

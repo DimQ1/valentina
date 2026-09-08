@@ -71,13 +71,14 @@ DialogCutArc::DialogCutArc(const VContainer *data, VAbstractPattern *doc, quint3
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxArc);
+
     m_timerFormula->setSingleShot(true);
     connect(m_timerFormula, &QTimer::timeout, this, &DialogCutArc::EvalFormula);
 
     ui->lineEditNamePoint->setClearButtonEnabled(true);
 
-    ui->lineEditNamePoint->setText(
-        VAbstractValApplication::VApp()->getCurrentDocument()->GenerateLabel(LabelType::NewLabel));
+    SetPointName(VAbstractValApplication::VApp()->getCurrentDocument()->GenerateLabel(LabelType::NewLabel));
     m_formulaBaseHeight = ui->plainTextEditFormula->height();
     ui->plainTextEditFormula->installEventFilter(this);
 
@@ -92,7 +93,7 @@ DialogCutArc::DialogCutArc(const VContainer *data, VAbstractPattern *doc, quint3
     connect(ui->lineEditNamePoint, &QLineEdit::textChanged, this,
             [this]()
             {
-                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, this->data,
+                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, &this->data,
                                 m_flagName);
                 CheckState();
             });
@@ -105,7 +106,7 @@ DialogCutArc::DialogCutArc(const VContainer *data, VAbstractPattern *doc, quint3
     connect(ui->lineEditAlias1, &QLineEdit::textEdited, this, &DialogCutArc::ValidateAlias);
     connect(ui->lineEditAlias2, &QLineEdit::textEdited, this, &DialogCutArc::ValidateAlias);
 
-    vis = new VisToolCutArc(data);
+    vis = new VisToolCutArc(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -114,7 +115,7 @@ DialogCutArc::DialogCutArc(const VContainer *data, VAbstractPattern *doc, quint3
 //---------------------------------------------------------------------------------------------------------------------
 void DialogCutArc::FXLength()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit length"));
     dialog->SetFormula(GetFormula());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -129,7 +130,7 @@ void DialogCutArc::FXLength()
 void DialogCutArc::EvalFormula()
 {
     Eval({.formula = ui->plainTextEditFormula->toPlainText(),
-          .variables = data->DataVariables(),
+          .variables = data.DataVariables(),
           .labelEditFormula = ui->labelEditFormula,
           .labelResult = ui->labelResultCalculation,
           .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -251,7 +252,13 @@ void DialogCutArc::changeEvent(QEvent *event)
 //---------------------------------------------------------------------------------------------------------------------
 void DialogCutArc::ArcChanged()
 {
-    CurrentCurveLength(getArcId(), const_cast<VContainer *>(data));
+    CurrentCurveLength(getArcId(), const_cast<VContainer *>(&data));
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void DialogCutArc::RestoreTransientVariables()
+{
+    ArcChanged();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -267,7 +274,7 @@ void DialogCutArc::ValidateAlias()
 
     if (not GetAliasSuffix1().isEmpty() &&
         (not rx.match(arc1.GetAlias()).hasMatch() ||
-         (m_originAliasSuffix1 != GetAliasSuffix1() && not data->IsUnique(arc1.GetAlias())) ||
+         (m_originAliasSuffix1 != GetAliasSuffix1() && not data.IsUnique(arc1.GetAlias())) ||
          arc1.GetAlias() == arc2.GetAlias()))
     {
         m_flagAlias1 = false;
@@ -281,7 +288,7 @@ void DialogCutArc::ValidateAlias()
 
     if (not GetAliasSuffix2().isEmpty() &&
         (not rx.match(arc2.GetAlias()).hasMatch() ||
-         (m_originAliasSuffix2 != GetAliasSuffix2() && not data->IsUnique(arc2.GetAlias())) ||
+         (m_originAliasSuffix2 != GetAliasSuffix2() && not data.IsUnique(arc2.GetAlias())) ||
          arc1.GetAlias() == arc2.GetAlias()))
     {
         m_flagAlias2 = false;
@@ -308,7 +315,7 @@ void DialogCutArc::ValidateCurveNames()
     arc2.SetNameSuffix(GetName2());
 
     if (GetName1().isEmpty() || !rx.match(arc1.name()).hasMatch()
-        || (m_originName1 != GetName1() && not data->IsUnique(arc1.name())) || arc1.name() == arc2.name())
+        || (m_originName1 != GetName1() && not data.IsUnique(arc1.name())) || arc1.name() == arc2.name())
     {
         m_flagCurveName1 = false;
         ChangeColor(ui->labelName1, errorColor);
@@ -320,7 +327,7 @@ void DialogCutArc::ValidateCurveNames()
     }
 
     if (GetName2().isEmpty() || !rx.match(arc2.name()).hasMatch()
-        || (m_originName2 != GetName2() && not data->IsUnique(arc2.name())) || arc1.name() == arc2.name())
+        || (m_originName2 != GetName2() && not data.IsUnique(arc2.name())) || arc1.name() == arc2.name())
     {
         m_flagCurveName2 = false;
         ChangeColor(ui->labelName2, errorColor);
@@ -330,6 +337,8 @@ void DialogCutArc::ValidateCurveNames()
         m_flagCurveName2 = true;
         ChangeColor(ui->labelName2, OkColor(this));
     }
+
+    CheckState();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -354,13 +363,13 @@ void DialogCutArc::InitIcons()
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogCutArc::GenerateDefLeftSubName() const -> QString
 {
-    return GenerateDefSubCurveName(data, getArcId(), "__ls"_L1, "LSubCurve"_L1, GetPointName());
+    return GenerateDefSubCurveName(&data, getArcId(), "__ls"_L1, "LSubArc"_L1, GetPointName());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 auto DialogCutArc::GenerateDefRightSubName() const -> QString
 {
-    return GenerateDefSubCurveName(data, getArcId(), "__rs"_L1, "RSubCurve"_L1, GetPointName());
+    return GenerateDefSubCurveName(&data, getArcId(), "__rs"_L1, "RSubArc"_L1, GetPointName());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -393,9 +402,14 @@ void DialogCutArc::SetFormula(const QString &value)
     }
     ui->plainTextEditFormula->setPlainText(m_formula);
 
-    auto *path = qobject_cast<VisToolCutArc *>(vis);
-    SCASSERT(path != nullptr)
-    path->SetLength(m_formula);
+    if (auto *path = qobject_cast<VisToolCutArc *>(vis))
+    {
+        path->SetLength(m_formula);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditFormula);
 }
@@ -534,12 +548,12 @@ void DialogCutArc::ShowDialog(bool click)
         auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
         SCASSERT(scene != nullptr)
 
-        const QSharedPointer<VAbstractArc> arc = data->GeometricObject<VAbstractArc>(getArcId());
+        const QSharedPointer<VAbstractArc> arc = data.GeometricObject<VAbstractArc>(getArcId());
         QPointF const p = arc->ClosestPoint(scene->getScenePos());
         qreal len = arc->GetLengthByPoint(p);
 
-        len = !arc->IsFlipped() ? qBound(0.0, len, arc->GetLength()) : qBound(arc->GetLength(), -len, 0.0);
-        SetFormula(QString::number(FromPixel(len, *data->GetPatternUnit())));
+        len = !arc->IsNegative() ? qBound(0.0, len, arc->GetLength()) : qBound(arc->GetLength(), -len, 0.0);
+        SetFormula(QString::number(FromPixel(len, *data.GetPatternUnit())));
     }
 
     FinishCreating();

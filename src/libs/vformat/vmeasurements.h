@@ -52,6 +52,13 @@ enum class GenderType : qint8
 
 using VDimensions = QMap<MeasurementDimension, MeasurementDimension_p>;
 
+struct DimensionBases
+{
+    qreal baseA{0};
+    qreal baseB{0};
+    qreal baseC{0};
+};
+
 class VMeasurements : public VDomDocument
 {
     Q_OBJECT // NOLINT
@@ -59,15 +66,20 @@ class VMeasurements : public VDomDocument
 public:
     explicit VMeasurements(VContainer *data, QObject *parent = nullptr);
     VMeasurements(Unit unit, VContainer *data, QObject *parent = nullptr);
-    VMeasurements(Unit unit, const QVector<MeasurementDimension_p> &dimensions, VContainer *data,
+    VMeasurements(Unit unit,
+                  const QVector<MeasurementDimension_p> &dimensions,
+                  VContainer *data,
                   QObject *parent = nullptr);
     ~VMeasurements() override = default;
 
     void setXMLContent(const QString &fileName) override;
     auto SaveDocument(const QString &fileName, QString &error) -> bool override;
+    auto SaveSchema() const -> QString override;
 
     void AddEmpty(const QString &name, const QString &formula = QString(), bool specialUnits = false);
-    void AddEmptyAfter(const QString &after, const QString &name, const QString &formula = QString(),
+    void AddEmptyAfter(const QString &after,
+                       const QString &name,
+                       const QString &formula = QString(),
                        bool specialUnits = false);
     void AddSeparator(const QString &name);
     void AddSeparatorAfter(const QString &after, const QString &name);
@@ -82,7 +94,7 @@ public:
     void StoreNames(bool store);
 
     void ReadMeasurements(qreal baseA, qreal baseB = 0, qreal baseC = 0) const;
-    void ClearForExport();
+    void ClearForExport() const;
 
     auto Type() const -> MeasurementsType;
     auto DimensionABase() const -> qreal;
@@ -250,9 +262,12 @@ private:
 
     void ClearDimension(IMD type);
 
-    void ReadMeasurement(const QDomElement &dom, QSharedPointer<VContainer> &tempData,
-                         QSharedPointer<VMeasurement> &meash, QSharedPointer<VMeasurement> &tempMeash, int i,
-                         qreal baseA, qreal baseB, qreal baseC) const;
+    void ReadMeasurement(const QDomElement &dom,
+                         const QSharedPointer<VContainer> &tempData,
+                         QSharedPointer<VMeasurement> &meash,
+                         QSharedPointer<VMeasurement> &tempMeash,
+                         int i,
+                         const DimensionBases &bases) const;
 };
 
 #endif // VMEASUREMENTS_H

@@ -115,7 +115,6 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QFuture>
-#include <QFutureWatcher>
 #include <QMessageBox>
 #include <QScopeGuard>
 #include <QTimer>
@@ -206,6 +205,42 @@ auto ParsePieceMirrorLine(const QDomElement &domElement) -> VPieceFoldLineData
                                                   VDomDocument::AttrAlignment,
                                                   QString::number(Qt::AlignHCenter))};
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+void CollectFromUnionSection(const QDomElement &parent, const QString &sectionTag, QVector<vidtype> &ids)
+{
+    const QDomElement section = parent.firstChildElement(sectionTag);
+    if (section.isNull())
+    {
+        return;
+    }
+    const QDomNodeList childList = section.elementsByTagName(VToolUnionDetails::TagChild);
+    for (int i = 0; i < childList.size(); ++i)
+    {
+        if (const QDomElement child = childList.at(i).toElement(); !child.isNull())
+        {
+            ids.append(static_cast<vidtype>(child.text().toUInt()));
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto CollectUnionChildIds(const QDomElement &toolElement) -> QVector<vidtype>
+{
+    const QDomElement tagChildren = toolElement.firstChildElement(VToolUnionDetails::TagChildren);
+    if (tagChildren.isNull())
+    {
+        return {};
+    }
+
+    QVector<vidtype> ids;
+    CollectFromUnionSection(tagChildren, VAbstractPattern::TagNodes, ids);
+    CollectFromUnionSection(tagChildren, VToolSeamAllowance::TagCSA, ids);
+    CollectFromUnionSection(tagChildren, VToolSeamAllowance::TagIPaths, ids);
+    CollectFromUnionSection(tagChildren, VToolSeamAllowance::TagPins, ids);
+    CollectFromUnionSection(tagChildren, VToolSeamAllowance::TagPlaceLabels, ids);
+    return ids;
+}
 } // anonymous namespace
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -214,19 +249,15 @@ VPattern::VPattern(VContainer *data, VMainGraphicsScene *sceneDraw, VMainGraphic
     data(data),
     sceneDraw(sceneDraw),
     sceneDetail(sceneDetail),
-    m_refreshPieceGeometryWatcher(new QFutureWatcher<void>(this))
+    m_refreshGeometryTimer(new QTimer(this))
 {
     SCASSERT(sceneDraw != nullptr)
     SCASSERT(sceneDetail != nullptr)
 
-    connect(qApp,
-            &QCoreApplication::aboutToQuit,
-            m_refreshPieceGeometryWatcher,
-            [this]() -> void
-            {
-                m_refreshPieceGeometryWatcher->cancel();
-                m_refreshPieceGeometryWatcher->waitForFinished();
-            });
+    m_refreshGeometryTimer->setSingleShot(true);
+    m_refreshGeometryTimer->setTimerType(Qt::CoarseTimer);
+    m_refreshGeometryTimer->setInterval(250ms);
+    connect(m_refreshGeometryTimer, &QTimer::timeout, this, &VPattern::RefreshPieceGeometry);
 
     connect(this, &VAbstractPattern::PatternDependencyGraphCompleted, this, &VPattern::CollectGarbage);
 }
@@ -269,29 +300,23 @@ void VPattern::CreateEmptyFile()
  */
 void VPattern::Parse(const Document &parse)
 {
-    qCDebug(vXML, "Parsing pattern.");
-    switch (parse)
-    {
-        case Document::FullParse:
-            qCDebug(vXML, "Full parse.");
-            break;
-        case Document::LiteParse:
-            qCDebug(vXML, "Lite parse.");
-            break;
-        case Document::FullLiteParse:
-            qCDebug(vXML, "Full lite parse.");
-            break;
-        case Document::LitePPParse:
-            qCDebug(vXML, "Lite pattern piece parse.");
-            break;
-        default:
-            break;
-    }
-
     emit PreParseState();
     SCASSERT(sceneDraw != nullptr)
     SCASSERT(sceneDetail != nullptr)
     PrepareForParse(parse);
+
+    // PrepareForParse() disables dependency-graph rebuilding only for a FullLiteParse (values-only
+    // reparse). Re-enable it once the parse finishes - even on exception - so later single-tool/GUI
+    // edits and LiteParse/FullParse runs keep updating the graph. FullParse/LiteParse leave
+    // rebuilding enabled via Clear().
+    auto graphRebuildGuard = qScopeGuard(
+        [this, parse]() -> void
+        {
+            if (parse == Document::FullLiteParse)
+            {
+                PatternGraph()->SetGraphRebuildEnabled(true);
+            }
+        });
 
     m_fileParsingCompleted = false;
     QDomNode domNode = documentElement().firstChild();
@@ -309,12 +334,30 @@ void VPattern::Parse(const Document &parse)
 
     if (VApplication::IsGUIMode())
     {
-        QTimer::singleShot(1s, Qt::VeryCoarseTimer, this, &VPattern::RefreshPieceGeometry);
+        // Restart the debounce timer so a burst of parses collapses into a single refresh that runs
+        // shortly after the last parse. Discrete actions (e.g. switching size) flush it immediately
+        // by calling RefreshPieceGeometry() directly, which cancels the pending timer.
+        m_refreshGeometryTimer->start();
     }
     else if (VApplication::CommandLine()->IsTestModeEnabled())
     {
         RefreshPieceGeometry();
     }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VPattern::Clear()
+{
+    VAbstractPattern::Clear();
+    updatePieces.clear();
+
+    m_refreshGeometryTimer->stop(); // Drop any pending refresh; it would run against a cleared document.
+
+    m_pieceGeometryDirty = true;
+
+    m_garbageCollected = false;
+    m_garbageCollectBackupFilePath.clear();
+    history.clear();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -327,16 +370,9 @@ void VPattern::Parse(const Document &parse)
  */
 void VPattern::setCurrentData()
 {
-    const int countPP = CountPatternBlockTags();
-    // don't need upadate data if we have only one pattern piece
-    if (VAbstractValApplication::VApp()->GetDrawMode() != Draw::Calculation || countPP <= 1)
-    {
-        return;
-    }
-
     qCDebug(vXML, "Setting current data");
     qCDebug(vXML, "Current PP name %s", qUtf8Printable(PatternBlockMapper()->GetActive()));
-    qCDebug(vXML, "PP count %d", countPP);
+    qCDebug(vXML, "PP count %d", CountPatternBlockTags());
 
     const QVector<VToolRecord> localHistory = GetLocalHistory();
     if (localHistory.isEmpty())
@@ -366,7 +402,7 @@ void VPattern::setCurrentData()
     }
 
     const VDataTool *vTool = tools.value(id);
-    *data = vTool->getData();
+    *data = vTool->GetDataCopy();
     // Delete special variables if exist
     data->RemoveVariable(currentLength);
     data->RemoveVariable(currentSeamAllowance);
@@ -383,7 +419,11 @@ void VPattern::UpdateToolData(const quint32 &id, VContainer *data)
 {
     Q_ASSERT_X(id != 0, Q_FUNC_INFO, "id == 0"); //-V712 //-V654
     SCASSERT(data != nullptr)
-    ToolExists(id);
+    if (!tools.contains(id))
+    {
+        // Tool was deleted (e.g. an undo command freed its owner piece); skip gracefully.
+        return;
+    }
     VDataTool *tool = tools.value(id);
     SCASSERT(tool != nullptr)
     tool->VDataTool::setData(data);
@@ -417,7 +457,7 @@ auto VPattern::GetCompleteData() const -> VContainer
 
     const VDataTool *vTool = tools.value(id);
     SCASSERT(vTool != nullptr)
-    VContainer lastData = vTool->getData();
+    VContainer lastData = vTool->GetDataCopy();
     // Delete special variables if exist
     lastData.RemoveVariable(currentLength);
     lastData.RemoveVariable(currentSeamAllowance);
@@ -452,7 +492,7 @@ auto VPattern::GetCompletePPData(const QString &name) const -> VContainer
 
     const VDataTool *vTool = tools.value(id);
     SCASSERT(vTool != nullptr)
-    VContainer lastData = vTool->getData();
+    VContainer lastData = vTool->GetDataCopy();
     // Delete special variables if exist
     lastData.RemoveVariable(currentLength);
     lastData.RemoveVariable(currentSeamAllowance);
@@ -649,7 +689,9 @@ void VPattern::LiteParseTree(const Document &parse)
         switch (parse)
         {
             case Document::LitePPParse:
+                PatternGraph()->SetGraphRebuildEnabled(false);
                 ParseCurrentPP();
+                PatternGraph()->SetGraphRebuildEnabled(true);
                 break;
             case Document::FullLiteParse:
             case Document::LiteParse:
@@ -740,7 +782,21 @@ void VPattern::LiteParseTree(const Document &parse)
     PatternBlockMapper()->SetActive(namePP);
     qCDebug(vXML, "Current pattern piece %s", qUtf8Printable(PatternBlockMapper()->GetActive()));
     setCurrentData();
-    emit FullUpdateFromFile();
+    try
+    {
+        emit FullUpdateFromFile();
+    }
+    catch (VException &e)
+    {
+        qCCritical(vXML, "%s\n\n%s\n\n%s", qUtf8Printable(tr("Error updating scene after parsing.")),
+                   qUtf8Printable(e.ErrorMessage()), qUtf8Printable(e.DetailedInformation()));
+        emit SetEnabledGUI(false);
+        if (not VApplication::IsGUIMode())
+        {
+            QCoreApplication::exit(V_EX_NOINPUT);
+        }
+        return;
+    }
     // Recalculate scene rect
     VMainGraphicsView::NewSceneRect(sceneDraw, VAbstractValApplication::VApp()->getSceneView());
     VMainGraphicsView::NewSceneRect(sceneDetail, VAbstractValApplication::VApp()->getSceneView());
@@ -792,69 +848,63 @@ void VPattern::SetPieceGeometryDirty(bool newPieceGeometryDirty)
 //---------------------------------------------------------------------------------------------------------------------
 void VPattern::RefreshDirtyPieceGeometry(const QList<vidtype> &list)
 {
-    if (!list.isEmpty())
+    m_pieceGeometryDirty = false;
+
+    if (list.isEmpty())
     {
-        if (m_refreshPieceGeometryWatcher->isRunning())
-        {
-            m_refreshPieceGeometryWatcher->cancel();
-            m_refreshPieceGeometryWatcher->waitForFinished();
-        }
-
-        auto future = QtConcurrent::run(
-            [this, list]()
-            {
-                RefreshPieceGeometryForList(list);
-                PostRefreshActions();
-            });
-
-        m_refreshPieceGeometryWatcher->setFuture(future);
+        return;
     }
 
-    m_pieceGeometryDirty = false;
+    // Resolve the piece tools and read the relevant settings on the GUI thread.
+    QVector<VToolSeamAllowance *> pieceTools;
+    pieceTools.reserve(list.size());
+    for (auto pieceId : std::as_const(list))
+    {
+        try
+        {
+            if (auto *piece = qobject_cast<VToolSeamAllowance *>(VAbstractPattern::getTool(pieceId)))
+            {
+                pieceTools.append(piece);
+            }
+        }
+        catch (const VExceptionBadId &)
+        {
+            // do nothing
+        }
+    }
+
+    if (pieceTools.isEmpty())
+    {
+        return;
+    }
+
+    const bool combineTogether = VAbstractValApplication::VApp()->ValentinaSettings()->IsBoundaryTogetherWithNotches();
+    const bool pieceShowMainPath = VAbstractApplication::VApp()->Settings()->IsPieceShowMainPath();
+
+    // Recompute every piece's geometry serially. The render pipeline reads shared VContainer data
+    // and evaluates formulas through qmuparser, neither of which is thread-safe, so the pieces must
+    // not be computed concurrently (doing so caused intermittent heap corruption on patterns with
+    // many pieces). The two-phase Prepare/Apply split is kept so the compute stays cleanly separated
+    // from the scene update, but both phases run on the GUI thread.
+    for (auto *piece : std::as_const(pieceTools))
+    {
+        piece->PrepareRefreshGeometry(combineTogether, pieceShowMainPath);
+    }
+
+    // Apply the precomputed geometry to the scene.
+    for (auto *piece : std::as_const(pieceTools))
+    {
+        piece->ApplyBatchGeometry();
+    }
+
+    emit CheckLayout();
+    VMainGraphicsView::NewSceneRect(sceneDetail, VAbstractValApplication::VApp()->getSceneView());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void VPattern::SetGBBackupFilePath(const QString &fileName)
 {
     m_garbageCollectBackupFilePath = fileName;
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void VPattern::RefreshPieceGeometryForList(const QList<vidtype> &list) const
-{
-    for (auto pieceId : std::as_const(list))
-    {
-        QMetaObject::invokeMethod(
-            QApplication::instance(),
-            [pieceId]()
-            {
-                try
-                {
-                    if (auto *piece = qobject_cast<VToolSeamAllowance *>(VAbstractPattern::getTool(pieceId)))
-                    {
-                        piece->RefreshGeometry();
-                    }
-                }
-                catch (const VExceptionBadId &)
-                {
-                    // do nothing
-                }
-            },
-            Qt::QueuedConnection);
-    }
-}
-
-//---------------------------------------------------------------------------------------------------------------------
-void VPattern::PostRefreshActions()
-{
-    QMetaObject::invokeMethod(
-        QApplication::instance(),
-        [this]()
-        {
-            emit CheckLayout();
-            VMainGraphicsView::NewSceneRect(sceneDetail, VAbstractValApplication::VApp()->getSceneView());
-        },
-        Qt::QueuedConnection);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -915,7 +965,6 @@ void VPattern::ParseRootElement(const Document &parse, const QDomNode &node)
     {
         case 0: // TagDraw
         {
-            qCDebug(vXML, "Tag draw.");
             VPatternBlockMapper *blocks = PatternBlockMapper();
             if (parse == Document::FullParse)
             {
@@ -933,19 +982,16 @@ void VPattern::ParseRootElement(const Document &parse, const QDomNode &node)
         case 1: // TagIncrements
             if (parse != Document::LiteParse)
             {
-                qCDebug(vXML, "Tag increments.");
                 ParseIncrementsElement(domElement, parse);
             }
             break;
         case 2: // TagPreviewCalculations
             if (parse != Document::LiteParse)
             {
-                qCDebug(vXML, "Tag preview calculations.");
                 ParseIncrementsElement(domElement, parse);
             }
             break;
         default:
-            qCDebug(vXML, "Ignoring tag %s", qUtf8Printable(domElement.tagName()));
             break;
     }
 }
@@ -978,20 +1024,16 @@ void VPattern::ParseDrawElement(const QDomNode &node, const Document &parse)
         switch (tags.indexOf(domElement.tagName()))
         {
             case 0: // TagCalculation
-                qCDebug(vXML, "Tag calculation.");
                 data->ClearCalculationGObjects();
                 ParseDrawMode(domElement, parse, Draw::Calculation);
                 break;
             case 1: // TagModeling
-                qCDebug(vXML, "Tag modeling.");
                 ParseDrawMode(domElement, parse, Draw::Modeling);
                 break;
             case 2: // TagDetails
-                qCDebug(vXML, "Tag details.");
                 ParseDetails(domElement, parse);
                 break;
             case 3: // TagGroups
-                qCDebug(vXML, "Tag groups.");
                 ParseGroups(domElement);
                 break;
             default:
@@ -1040,35 +1082,27 @@ void VPattern::ParseDrawModeElement(QDomElement &domElement, const Document &par
     switch (tags.indexOf(domElement.tagName()))
     {
         case 0: // TagPoint
-            qCDebug(vXML, "Tag point.");
             ParsePointElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 1: // TagLine
-            qCDebug(vXML, "Tag line.");
             ParseLineElement(scene, domElement, parse);
             break;
         case 2: // TagSpline
-            qCDebug(vXML, "Tag spline.");
             ParseSplineElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 3: // TagArc
-            qCDebug(vXML, "Tag arc.");
             ParseArcElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 4: // TagTools
-            qCDebug(vXML, "Tag tools.");
             ParseToolsElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 5: // TagOperation
-            qCDebug(vXML, "Tag operation.");
             ParseOperationElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 6: // TagElArc
-            qCDebug(vXML, "Tag elliptical arc.");
             ParseEllipticalArcElement(scene, domElement, parse, domElement.attribute(AttrType, QString()));
             break;
         case 7: // TagPath
-            qCDebug(vXML, "Tag path.");
             ParsePathElement(scene, domElement, parse);
             break;
         default:
@@ -1477,8 +1511,9 @@ void VPattern::PointsCommonAttributes(const QDomElement &domElement, VToolSingle
 void VPattern::PointsCommonAttributes(const QDomElement &domElement, quint32 &id, qreal &mx, qreal &my)
 {
     ToolsCommonAttributes(domElement, id);
-    mx = VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMx, QString::number(labelMX)));
-    my = VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMy, QString::number(labelMY)));
+    const VAbstractValApplication *app = VAbstractValApplication::VApp();
+    mx = app->toPixel(GetParametrDouble(domElement, AttrMx, QString::number(app->fromPixel(labelMX))));
+    my = app->toPixel(GetParametrDouble(domElement, AttrMy, QString::number(app->fromPixel(labelMY))));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1486,8 +1521,9 @@ void VPattern::DrawPointsCommonAttributes(const QDomElement &domElement, quint32
                                           QString &notes)
 {
     DrawToolsCommonAttributes(domElement, id, notes);
-    mx = VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMx, QString::number(labelMX)));
-    my = VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMy, QString::number(labelMY)));
+    const VAbstractValApplication *app = VAbstractValApplication::VApp();
+    mx = app->toPixel(GetParametrDouble(domElement, AttrMx, QString::number(app->fromPixel(labelMX))));
+    my = app->toPixel(GetParametrDouble(domElement, AttrMy, QString::number(app->fromPixel(labelMY))));
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2101,6 +2137,7 @@ void VPattern::ParseNodePoint(const QDomElement &domElement, const Document &par
         initData.idObject = GetParametrUInt(domElement, AttrIdObject, NULL_ID_STR);
         initData.idTool = GetParametrUInt(domElement, VAbstractNode::AttrIdTool, NULL_ID_STR);
         initData.showLabel = GetParametrBool(domElement, AttrShowLabel, trueStr);
+        initData.showLabelExplicit = domElement.hasAttribute(AttrShowLabel);
 
         VNodePoint::Create(initData);
     }
@@ -2161,9 +2198,9 @@ void VPattern::ParsePlaceLabel(QDomElement &domElement, const Document &parse)
         }
         catch (const VExceptionBadId &)
         { // Possible case. Parent was deleted, but the node object is still here.
-            qDebug() << "Broken relation. Parent was deleted, but the place label object is still here. Place label "
-                        "id ="
-                     << initData.id << ".";
+            qCDebug(vXML) << "Broken relation. Parent was deleted, but the place label object is still here. "
+                             "Place label id ="
+                          << initData.id << ".";
             return; // Just ignore
         }
 
@@ -2326,6 +2363,18 @@ void VPattern::ParseToolCutSpline(VMainGraphicsScene *scene, QDomElement &domEle
         initData.baseCurveId = GetParametrUInt(domElement, VToolCutSpline::AttrSpline, NULL_ID_STR);
         initData.aliasSuffix1 = GetParametrEmptyString(domElement, AttrAlias1);
         initData.aliasSuffix2 = GetParametrEmptyString(domElement, AttrAlias2);
+        initData.segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.segment2Id = GetParametrId(domElement, AttrSegment2Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
 
         // Make name1 and name2 mandatory
         Q_STATIC_ASSERT(VPatternConverter::PatternMinVer < FormatVersion(1, 1, 1));
@@ -2376,6 +2425,18 @@ void VPattern::ParseToolCutSplinePath(VMainGraphicsScene *scene, QDomElement &do
         initData.baseCurveId = GetParametrUInt(domElement, VToolCutSplinePath::AttrSplinePath, NULL_ID_STR);
         initData.aliasSuffix1 = GetParametrEmptyString(domElement, AttrAlias1);
         initData.aliasSuffix2 = GetParametrEmptyString(domElement, AttrAlias2);
+        initData.segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.segment2Id = GetParametrId(domElement, AttrSegment2Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
 
         // Make name1 and name2 mandatory
         Q_STATIC_ASSERT(VPatternConverter::PatternMinVer < FormatVersion(1, 1, 1));
@@ -2426,6 +2487,18 @@ void VPattern::ParseToolCutArc(VMainGraphicsScene *scene, QDomElement &domElemen
         initData.baseCurveId = GetParametrUInt(domElement, AttrArc, NULL_ID_STR);
         initData.aliasSuffix1 = GetParametrEmptyString(domElement, AttrAlias1);
         initData.aliasSuffix2 = GetParametrEmptyString(domElement, AttrAlias2);
+        initData.segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.segment2Id = GetParametrId(domElement, AttrSegment2Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
 
         // Make name1 and name2 mandatory
         Q_STATIC_ASSERT(VPatternConverter::PatternMinVer < FormatVersion(1, 1, 1));
@@ -2533,6 +2606,18 @@ void VPattern::ParseToolCurveIntersectAxis(VMainGraphicsScene *scene, QDomElemen
         initData.name2 = GetParametrEmptyString(domElement, AttrName2);
         initData.aliasSuffix1 = GetParametrEmptyString(domElement, AttrAlias1);
         initData.aliasSuffix2 = GetParametrEmptyString(domElement, AttrAlias2);
+        initData.segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.segment2Id = GetParametrId(domElement, AttrSegment2Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
 
         VToolCurveIntersectAxis::Create(initData);
         // Rewrite attribute formula. Need for situation when we have wrong formula.
@@ -2577,6 +2662,32 @@ void VPattern::ParseToolPointOfIntersectionArcs(VMainGraphicsScene *scene, const
         initData.firstArcId = GetParametrUInt(domElement, AttrFirstArc, NULL_ID_STR);
         initData.secondArcId = GetParametrUInt(domElement, AttrSecondArc, NULL_ID_STR);
         initData.pType = static_cast<CrossCirclesPoint>(GetParametrUInt(domElement, AttrCrossPoint, QChar('1')));
+        initData.arc1Name1 = GetParametrEmptyString(domElement, AttrCurve1Name1);
+        initData.arc1Name2 = GetParametrEmptyString(domElement, AttrCurve1Name2);
+        initData.arc2Name1 = GetParametrEmptyString(domElement, AttrCurve2Name1);
+        initData.arc2Name2 = GetParametrEmptyString(domElement, AttrCurve2Name2);
+        initData.arc1AliasSuffix1 = GetParametrEmptyString(domElement, AttrCurve1Alias1);
+        initData.arc1AliasSuffix2 = GetParametrEmptyString(domElement, AttrCurve1Alias2);
+        initData.arc2AliasSuffix1 = GetParametrEmptyString(domElement, AttrCurve2Alias1);
+        initData.arc2AliasSuffix2 = GetParametrEmptyString(domElement, AttrCurve2Alias2);
+        initData.arc1Segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.arc1Segment2Id = GetParametrId(domElement, AttrSegment2Id);
+        initData.arc2Segment1Id = GetParametrId(domElement, AttrSegment3Id);
+        initData.arc2Segment2Id = GetParametrId(domElement, AttrSegment4Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.arc1Segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.arc1Segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.arc1Segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.arc1Segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
+        initData.arc2Segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment3Mx, labelMXStr));
+        initData.arc2Segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment3My, labelMYStr));
+        initData.arc2Segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment4Mx, labelMXStr));
+        initData.arc2Segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment4My, labelMYStr));
 
         VToolPointOfIntersectionArcs::Create(initData);
     }
@@ -2666,6 +2777,24 @@ void VPattern::ParseToolPointOfIntersectionCurves(VMainGraphicsScene *scene, QDo
         initData.curve1AliasSuffix2 = GetParametrEmptyString(domElement, AttrCurve1Alias2);
         initData.curve2AliasSuffix1 = GetParametrEmptyString(domElement, AttrCurve2Alias1);
         initData.curve2AliasSuffix2 = GetParametrEmptyString(domElement, AttrCurve2Alias2);
+        initData.curve1Segment1Id = GetParametrId(domElement, AttrSegment1Id);
+        initData.curve1Segment2Id = GetParametrId(domElement, AttrSegment2Id);
+        initData.curve2Segment1Id = GetParametrId(domElement, AttrSegment3Id);
+        initData.curve2Segment2Id = GetParametrId(domElement, AttrSegment4Id);
+
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
+        initData.curve1Segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment1Mx, labelMXStr));
+        initData.curve1Segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment1My, labelMYStr));
+        initData.curve1Segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment2Mx, labelMXStr));
+        initData.curve1Segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment2My, labelMYStr));
+        initData.curve2Segment1Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment3Mx, labelMXStr));
+        initData.curve2Segment1My = app->toPixel(GetParametrDouble(domElement, AttrSegment3My, labelMYStr));
+        initData.curve2Segment2Mx = app->toPixel(GetParametrDouble(domElement, AttrSegment4Mx, labelMXStr));
+        initData.curve2Segment2My = app->toPixel(GetParametrDouble(domElement, AttrSegment4My, labelMYStr));
 
         VToolPointOfIntersectionCurves::Create(initData);
     }
@@ -2774,18 +2903,19 @@ void VPattern::ParseToolTrueDarts(VMainGraphicsScene *scene, const QDomElement &
         initData.dartP2Id = GetParametrUInt(domElement, AttrDartP2, NULL_ID_STR);
         initData.dartP3Id = GetParametrUInt(domElement, AttrDartP3, NULL_ID_STR);
 
+        const VAbstractValApplication *app = VAbstractValApplication::VApp();
+
+        const QString labelMXStr = QString::number(app->fromPixel(labelMX));
+        const QString labelMYStr = QString::number(app->fromPixel(labelMY));
+
         initData.name1 = GetParametrString(domElement, AttrName1, QChar('A'));
-        initData.mx1 =
-            VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMx1, QString::number(labelMX)));
-        initData.my1 =
-            VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMy1, QString::number(labelMY)));
+        initData.mx1 = app->toPixel(GetParametrDouble(domElement, AttrMx1, labelMXStr));
+        initData.my1 = app->toPixel(GetParametrDouble(domElement, AttrMy1, labelMYStr));
         initData.showLabel1 = GetParametrBool(domElement, AttrShowLabel1, trueStr);
 
         initData.name2 = GetParametrString(domElement, AttrName2, QChar('A'));
-        initData.mx2 =
-            VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMx2, QString::number(labelMX)));
-        initData.my2 =
-            VAbstractValApplication::VApp()->toPixel(GetParametrDouble(domElement, AttrMy2, QString::number(labelMY)));
+        initData.mx2 = app->toPixel(GetParametrDouble(domElement, AttrMx2, labelMXStr));
+        initData.my2 = app->toPixel(GetParametrDouble(domElement, AttrMy2, labelMYStr));
         initData.showLabel2 = GetParametrBool(domElement, AttrShowLabel2, trueStr);
 
         VToolTrueDarts::Create(initData);
@@ -3877,36 +4007,63 @@ auto VPattern::FindIncrement(const QString &name) const -> QDomElement
 }
 
 //---------------------------------------------------------------------------------------------------------------------
-void VPattern::GarbageCollector()
+// MODELING_TOOL (union tools) cannot be assessed via BFS from the tool itself because
+// their children keep the BFS path alive even when the resulting piece is gone.
+// They are handled separately in GCStaleUnionTools.
+auto VPattern::GCStaleModelingObjects(const VPatternGraph *graph) -> QSet<vidtype>
 {
-    bool cleared = false;
-
-    VPatternGraph const *graph = PatternGraph();
-
-    QSet<vidtype> candidates = ConvertToSet(graph->GetVerticesByType(VNodeType ::MODELING_OBJECT));
-    candidates += ConvertToSet(graph->GetVerticesByType(VNodeType ::MODELING_TOOL));
-
+    QSet<vidtype> candidates = ConvertToSet(graph->GetVerticesByType(VNodeType::MODELING_OBJECT));
     EraseIf(candidates,
-            [graph, this](auto node) -> bool
+            [graph, this](vidtype node) -> bool
             {
-                auto Filter = [](const auto &node) -> auto { return node.type == VNodeType::PIECE; };
-                const QVector<VNode> nodeDependencies = graph->GetDependentNodes(node, Filter);
-                return !nodeDependencies.isEmpty() || FindElementById(node).isNull();
+                auto const PieceFilter = [](const VNode &n) -> bool { return n.type == VNodeType::PIECE; };
+                return !graph->GetDependentNodes(node, PieceFilter).isEmpty() || FindElementById(node).isNull();
             });
+    return candidates;
+}
 
-    if (candidates.isEmpty())
+//---------------------------------------------------------------------------------------------------------------------
+// A union tool is stale when ALL its XML-recorded children have no reachable PIECE descendants.
+auto VPattern::GCStaleUnionTools(const VPatternGraph *graph) -> QSet<vidtype>
+{
+    auto const PieceFilter = [](const VNode &n) -> bool { return n.type == VNodeType::PIECE; };
+
+    QSet<vidtype> candidates;
+    for (vidtype const toolId : graph->GetVerticesByType(VNodeType::MODELING_TOOL))
     {
-        return;
+        const QDomElement toolElement = FindElementById(toolId);
+        if (toolElement.isNull() || toolElement.attribute(AttrType) != VToolUnionDetails::ToolType)
+        {
+            continue;
+        }
+
+        const QVector<vidtype> childIds = CollectUnionChildIds(toolElement);
+        if (childIds.isEmpty())
+        {
+            continue;
+        }
+
+        if (!std::ranges::all_of(childIds,
+                                  [graph, &PieceFilter](vidtype childId) -> bool
+                                  { return graph->GetDependentNodes(childId, PieceFilter).isEmpty(); }))
+        {
+            continue;
+        }
+
+        candidates.insert(toolId);
     }
+    return candidates;
+}
 
-    BackupBeforeGarbageCollector();
+//---------------------------------------------------------------------------------------------------------------------
+auto VPattern::GCRemoveFromModeling(const QSet<vidtype> &candidates) -> QSet<vidtype>
+{
+    QSet<vidtype> removed;
+    removed.reserve(candidates.size());
 
-    QSet<vidtype> clearedNodes;
-    clearedNodes.reserve(candidates.size());
-
-    for (const auto node : std::as_const(candidates))
+    for (vidtype const node : candidates)
     {
-        QDomElement const domElement = FindElementById(node);
+        const QDomElement domElement = FindElementById(node);
         if (domElement.isNull())
         {
             continue;
@@ -3916,33 +4073,50 @@ void VPattern::GarbageCollector()
             !parent.isNull() && parent.tagName() == TagModeling)
         {
             parent.removeChild(domElement);
-            cleared = true;
-            clearedNodes.insert(node);
+            removed.insert(node);
         }
     }
+    return removed;
+}
 
-    if (!cleared)
-    {
-        return;
-    }
-
+//---------------------------------------------------------------------------------------------------------------------
+void VPattern::GCUpdateHistory(const QSet<vidtype> &removed)
+{
     QVector<VToolRecord> newHistory;
     newHistory.reserve(history.size());
-
     for (const auto &record : std::as_const(history))
     {
-        if (!clearedNodes.contains(record.GetId()))
+        if (!removed.contains(record.GetId()))
         {
             newHistory.append(record);
         }
     }
-
     history = newHistory;
+}
 
-    if (cleared)
+//---------------------------------------------------------------------------------------------------------------------
+void VPattern::GarbageCollector()
+{
+    VPatternGraph const *graph = PatternGraph();
+
+    QSet<vidtype> candidates = GCStaleModelingObjects(graph);
+    candidates += GCStaleUnionTools(graph);
+
+    if (candidates.isEmpty())
     {
-        RefreshElementIdCache();
+        return;
     }
+
+    BackupBeforeGarbageCollector();
+
+    const QSet<vidtype> removed = GCRemoveFromModeling(candidates);
+    if (removed.isEmpty())
+    {
+        return;
+    }
+
+    GCUpdateHistory(removed);
+    RefreshElementIdCache();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -4085,6 +4259,10 @@ auto VPattern::PPLastToolId(int blockIndex) const -> quint32
 //---------------------------------------------------------------------------------------------------------------------
 void VPattern::RefreshPieceGeometry()
 {
+    // Whether triggered by the debounce timer or called directly for an immediate flush, make sure
+    // no pending timer fire follows and triggers a redundant refresh.
+    m_refreshGeometryTimer->stop();
+
     if (!VAbstractApplication::VApp()->IsAppInGUIMode()
         || VAbstractValApplication::VApp()->GetDrawMode() == Draw::Modeling)
     {
@@ -4136,41 +4314,32 @@ void VPattern::ParseSplineElement(VMainGraphicsScene *scene, QDomElement &domEle
             ParseOldToolSpline(scene, domElement, parse);
             break;
         case 1: // VToolSpline::ToolType
-            qCDebug(vXML, "VToolSpline.");
             ParseToolSpline(scene, domElement, parse);
             break;
         case 2: // VToolSplinePath::OldToolType
-            qCDebug(vXML, "VOldToolSplinePath.");
             // TODO. Delete if minimal supported version is 0.2.7
             Q_STATIC_ASSERT_X(VPatternConverter::PatternMinVer < FormatVersion(0, 2, 7), "Time to refactor the code.");
             ParseOldToolSplinePath(scene, domElement, parse);
             break;
         case 3: // VToolSplinePath::ToolType
-            qCDebug(vXML, "VToolSplinePath.");
             ParseToolSplinePath(scene, domElement, parse);
             break;
         case 4: // VNodeSpline::ToolType
-            qCDebug(vXML, "VNodeSpline.");
             ParseNodeSpline(domElement, parse);
             break;
         case 5: // VNodeSplinePath::ToolType
-            qCDebug(vXML, "VNodeSplinePath.");
             ParseNodeSplinePath(domElement, parse);
             break;
         case 6: // VToolCubicBezier::ToolType
-            qCDebug(vXML, "VToolCubicBezier.");
             ParseToolCubicBezier(scene, domElement, parse);
             break;
         case 7: // VToolCubicBezierPath::ToolType
-            qCDebug(vXML, "VToolCubicBezierPath.");
             ParseToolCubicBezierPath(scene, domElement, parse);
             break;
         case 8: // VToolParallelCurve::ToolType
-            qCDebug(vXML, "VToolParallelCurve.");
             ParseToolParallelCurve(scene, domElement, parse);
             break;
         case 9: // VToolGraduatedCurve::ToolType
-            qCDebug(vXML, "VToolGraduatedCurve.");
             ParseToolGraduatedCurve(scene, domElement, parse);
             break;
         default:
@@ -4708,7 +4877,25 @@ void VPattern::PrepareForParse(const Document &parse)
     }
 
     CancelFormulaDependencyChecks();
-    PatternGraph()->Clear();
+
+    if (parse == Document::FullLiteParse)
+    {
+        // FullLiteParse is the only value-only reparse (size switch, measurement sync, increment
+        // edit): formulas and structure are unchanged, only variable values differ, objects keep
+        // their ids, and increments are not graph vertices. So keep the dependency graph built by the
+        // last full parse and skip rebuilding it - AddVertex/AddEdge/FindFormulaDependencies become
+        // no-ops while disabled; Parse() re-enables rebuilding once the parse finishes.
+        //
+        // LiteParse is intentionally NOT skipped: it follows a tool edit (SaveToolOptions), whose
+        // changed formula may add or remove dependency edges, so its graph must be rebuilt from
+        // scratch - just like a full parse. The parse type alone does not tell us that; the
+        // FullLiteParse-vs-LiteParse split is what carries the "values only" guarantee.
+        PatternGraph()->SetGraphRebuildEnabled(false);
+    }
+    else
+    {
+        PatternGraph()->Clear();
+    }
 
     if (parse == Document::FullParse)
     {
@@ -4718,6 +4905,12 @@ void VPattern::PrepareForParse(const Document &parse)
         sceneDetail->clear();
         sceneDetail->InitOrigins();
         data->ClearForFullParse();
+        // An orphaned node (its source object already deleted) still holds its id on this element, but nothing
+        // recreates it as a live object during this parse, so nothing else advances the id generator past it.
+        // Resync against every id physically present, not just the ones this parse manages to rebuild, or a
+        // freshly minted id can collide with one that only survives on such an element.
+        data->UpdateId(MaxRecordedId());
+        qCDebug(vXML, "Id counter resynced to %u after full parse reset.", data->getId());
         PatternBlockMapper()->Clear();
 
         qDeleteAll(toolsOnRemove); // Remove all invisible on a scene objects.
@@ -4865,26 +5058,43 @@ auto VPattern::ActiveDrawBoundingRect() const -> QRectF
 //---------------------------------------------------------------------------------------------------------------------
 template <typename T> auto VPattern::ToolBoundingRect(const QRectF &rec, quint32 id) const -> QRectF
 {
-    QRectF recTool = rec;
-    if (tools.contains(id))
+    VDataTool *dataTool = tools.value(id, nullptr);
+    if (dataTool == nullptr)
     {
-        if (const T *vTool = qobject_cast<T *>(tools.value(id)); vTool != nullptr)
-        {
-            QRectF childrenRect = vTool->childrenBoundingRect();
-            // map to scene coordinate.
-            childrenRect.translate(vTool->scenePos());
+        qDebug() << "Can't find tool or null pointer for id=" << id;
+        return rec;
+    }
 
-            recTool = recTool.united(vTool->sceneBoundingRect());
-            recTool = recTool.united(childrenRect);
-        }
-        else
-        {
-            qDebug() << "qobject_cast failed for tool with id=" << id;
-        }
-    }
-    else
+    const T *vTool = qobject_cast<T *>(dataTool);
+    if (vTool == nullptr)
     {
-        qDebug() << "Can't find tool with id=" << id;
+        qDebug() << "qobject_cast<" << T::staticMetaObject.className() << "> failed for id=" << id
+                 << "actual type:" << dataTool->metaObject()->className();
+        return rec;
     }
+
+    // sceneBoundingRect() and scenePos() are undefined if the item has no scene.
+    if (vTool->scene() == nullptr)
+    {
+        qDebug() << "Tool id=" << id << "(" << dataTool->metaObject()->className()
+                 << ") has no scene, skipping bounding rect";
+        return rec;
+    }
+
+    QRectF recTool = rec;
+
+    if (const QRectF sceneBounds = vTool->sceneBoundingRect(); sceneBounds.isValid())
+    {
+        recTool = recTool.united(sceneBounds);
+    }
+
+    if (const QRectF childrenRect = vTool->childrenBoundingRect(); childrenRect.isValid())
+    {
+        // childrenBoundingRect() is in item-local coords — translate to scene space.
+        QRectF childrenSceneRect = childrenRect;
+        childrenSceneRect.translate(vTool->scenePos());
+        recTool = recTool.united(childrenSceneRect);
+    }
+
     return recTool;
 }

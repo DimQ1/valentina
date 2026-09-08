@@ -29,7 +29,9 @@
 #include "vganalytics.h"
 
 #include <QCoreApplication>
+#include <QLoggingCategory>
 #include <QNetworkAccessManager>
+#include <QNetworkProxy>
 #include <QNetworkReply>
 
 #include <QGuiApplication>
@@ -44,6 +46,8 @@
 #endif
 
 using namespace Qt::Literals::StringLiterals;
+
+Q_LOGGING_CATEGORY(vAnalytics, "v.analytics") // NOLINT
 
 const QLatin1String VGAnalyticsWorker::dateTimeFormat("yyyy,MM,dd-hh:mm::ss:zzz");
 
@@ -111,7 +115,19 @@ void VGAnalyticsWorker::LogMessage(enum VGAnalytics::LogLevel level, const QStri
         return;
     }
 
-    qDebug() << "[Analytics]" << message;
+    switch (level)
+    {
+        case VGAnalytics::Error:
+            qCWarning(vAnalytics).noquote() << message;
+            break;
+        case VGAnalytics::Info:
+            qCInfo(vAnalytics).noquote() << message;
+            break;
+        case VGAnalytics::Debug:
+        default:
+            qCDebug(vAnalytics).noquote() << message;
+            break;
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -201,6 +217,15 @@ void VGAnalyticsWorker::EnqueQueryWithCurrentTime(const QJsonObject &query)
  */
 auto VGAnalyticsWorker::SendAnalytics() -> QNetworkReply *
 {
+    if (!m_pendingReply.isNull())
+    {
+        // A POST for the head of the queue is already in flight. Callers arrive from several places at once (the
+        // retry timer, the finished handler, the close-event flush at shutdown), and posting the head a second time
+        // would make SendAnalyticsFinished() dequeue twice for a single message - eventually dequeuing an empty
+        // queue. Let everyone wait on the reply that is already running.
+        return m_pendingReply;
+    }
+
     if (m_messageQueue.isEmpty())
     {
         // queue empty -> try sending later
@@ -231,13 +256,16 @@ auto VGAnalyticsWorker::SendAnalytics() -> QNetworkReply *
     m_request.setRawHeader("Connection", connection.toUtf8());
     m_request.setHeader(QNetworkRequest::ContentLengthHeader, requestJson.length());
 
-    if (m_measurementId.isEmpty())
+    if (m_measurementId.isEmpty() || m_apiSecret.isEmpty())
     {
-        LogMessage(VGAnalytics::Error, QStringLiteral("google analytics measurement id was not set!"));
-    }
-    if (m_apiSecret.isEmpty())
-    {
-        LogMessage(VGAnalytics::Error, QStringLiteral("google analytics api seceret was not set!"));
+        // The id/secret are compile-time constants (see def.h) and are always set once VGAnalytics::Init()
+        // has run, so getting here means SendAnalytics() was reached before Init() - e.g. the app quit
+        // (AboutToQuit() -> SendAppCloseStatistic()) before InitOptions() reached its VGAnalytics::Init()
+        // call. Not a real misconfiguration, so just drop the message instead of popping a warning dialog
+        // and POSTing a request with blank credentials.
+        LogMessage(VGAnalytics::Debug, QStringLiteral("google analytics not initialized yet, dropping message"));
+        m_messageQueue.dequeue();
+        return nullptr;
     }
 
     auto requestUrl = QStringLiteral("https://www.google-analytics.com/mp/collect?measurement_id=%1&api_secret=%2");
@@ -250,10 +278,15 @@ auto VGAnalyticsWorker::SendAnalytics() -> QNetworkReply *
     if (networkManager == nullptr)
     {
         networkManager = new QNetworkAccessManager(this);
+        // This worker lives on the GUI thread, and on Windows the first request through a manager resolves the system
+        // proxy synchronously on the calling thread. With WPAD enabled and the PAC host unreachable that freezes the
+        // UI for as long as WinHTTP takes to give up. Telemetry is not worth blocking on, so skip the lookup.
+        networkManager->setProxy(QNetworkProxy::NoProxy);
     }
 
     QNetworkReply *reply = networkManager->post(m_request, requestJson);
     connect(reply, &QNetworkReply::finished, this, &VGAnalyticsWorker::SendAnalyticsFinished);
+    m_pendingReply = reply;
     return reply;
 }
 
@@ -271,8 +304,28 @@ void VGAnalyticsWorker::SendAnalyticsFinished()
 {
     auto *reply = qobject_cast<QNetworkReply *>(sender());
 
-    if (int const httpStausCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        httpStausCode < 200 || httpStausCode > 299)
+    if (reply == nullptr)
+    {
+        // The signal was not emitted by a QNetworkReply, or the reply is already gone (e.g. the
+        // application is shutting down). Nothing safe to do here.
+        return;
+    }
+
+    // Make sure the reply is destroyed once we leave this slot, regardless of which branch we take.
+    reply->deleteLater();
+
+    if (m_pendingReply == reply)
+    {
+        m_pendingReply.clear();
+    }
+
+    int const httpStatusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // Unconditional breadcrumb (bypasses m_logLevel) so a crash/hang while flushing analytics leaves a
+    // trace in the log instead of cutting off silently.
+    qCDebug(vAnalytics) << "Reply finished. HTTP status =" << httpStatusCode << "queue size =" << m_messageQueue.size();
+
+    if (httpStatusCode < 200 || httpStatusCode > 299)
     {
         LogMessage(VGAnalytics::Error, QStringLiteral("Error posting message: %1").arg(reply->errorString()));
 
@@ -283,7 +336,14 @@ void VGAnalyticsWorker::SendAnalyticsFinished()
 
     LogMessage(VGAnalytics::Debug, QStringLiteral("Message sent"));
 
+    if (m_messageQueue.isEmpty())
+    {
+        // Dequeuing an empty queue is undefined behaviour, and it crashed the application at shutdown. Nothing left
+        // to confirm, so just idle.
+        m_timer.start();
+        return;
+    }
+
     m_messageQueue.dequeue();
     SendAnalytics();
-    reply->deleteLater();
 }

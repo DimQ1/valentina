@@ -90,8 +90,12 @@ public slots:
     void FXLength();
     void EvalFormula();
 
+private slots:
+    void SwapPoints();
+
 protected:
     void ShowVisualization() override;
+    void RestoreTransientVariables() override;
     /**
      * @brief SaveData Put dialog data in local variables
      */

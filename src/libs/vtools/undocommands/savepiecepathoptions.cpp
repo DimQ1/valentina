@@ -37,7 +37,6 @@
 #include "../tools/nodeDetails/vtoolpiecepath.h"
 #include "../tools/vtoolseamallowance.h"
 #include "../vmisc/compatibility.h"
-#include "../vpatterndb/vcontainer.h"
 #include "../vpatterndb/vpiecenode.h"
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -45,13 +44,11 @@ SavePiecePathOptions::SavePiecePathOptions(quint32 pieceId,
                                            VPiecePath oldPath,
                                            VPiecePath newPath,
                                            VAbstractPattern *doc,
-                                           VContainer *data,
                                            quint32 id,
                                            QUndoCommand *parent)
   : VUndoCommand(doc, id, parent),
     m_oldPath(std::move(oldPath)),
     m_newPath(std::move(newPath)),
-    m_data(data),
     m_pieceId(pieceId)
 {
     setText(tr("save path options"));
@@ -70,7 +67,7 @@ void SavePiecePathOptions::undo()
     }
 
     VToolPiecePath::AddAttributes(Doc(), domElement, ElementId(), m_oldPath);
-    VDomDocument::RemoveAllChildren(domElement); //Very important to clear before rewrite
+    VAbstractPattern::RemoveAllChildren(domElement); //Very important to clear before rewrite
     VToolPiecePath::AddNodes(Doc(), domElement, m_oldPath);
 
     VPatternGraph *patternGraph = Doc()->PatternGraph();
@@ -78,14 +75,18 @@ void SavePiecePathOptions::undo()
 
     patternGraph->RemoveIncomingEdges(ElementId());
 
-    DisablePieceNodes(m_newPath);
-    EnablePieceNodes(m_oldPath);
+    if (m_newPath.GetType() == PiecePathType::InternalPath)
+    {
+        DisablePieceNodes(m_newPath);
+        EnablePieceNodes(m_oldPath);
+    }
 
-    SCASSERT(m_data);
+    auto *pathTool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(ElementId()));
+    SCASSERT(pathTool != nullptr)
 
     if (m_newPath.GetType() == PiecePathType::InternalPath)
     {
-        const auto varData = m_data->DataDependencyVariables();
+        const auto varData = pathTool->getData()->DataDependencyVariables();
         Doc()->FindFormulaDependencies(m_oldPath.GetVisibilityTrigger(), ElementId(), varData);
     }
 
@@ -94,7 +95,7 @@ void SavePiecePathOptions::undo()
         patternGraph->AddEdge(m_oldPath.at(i).GetId(), ElementId());
     }
 
-    m_data->UpdatePiecePath(ElementId(), m_oldPath);
+    pathTool->getData()->UpdatePiecePath(ElementId(), m_oldPath);
 
     if (m_pieceId != NULL_ID)
     {
@@ -118,7 +119,7 @@ void SavePiecePathOptions::redo()
     }
 
     VToolPiecePath::AddAttributes(Doc(), domElement, ElementId(), m_newPath);
-    VDomDocument::RemoveAllChildren(domElement); //Very important to clear before rewrite
+    VAbstractPattern::RemoveAllChildren(domElement); //Very important to clear before rewrite
     VToolPiecePath::AddNodes(Doc(), domElement, m_newPath);
 
     VPatternGraph *patternGraph = Doc()->PatternGraph();
@@ -126,14 +127,18 @@ void SavePiecePathOptions::redo()
 
     patternGraph->RemoveIncomingEdges(ElementId());
 
-    DisablePieceNodes(m_oldPath);
-    EnablePieceNodes(m_newPath);
+    if (m_oldPath.GetType() == PiecePathType::InternalPath)
+    {
+        DisablePieceNodes(m_oldPath);
+        EnablePieceNodes(m_newPath);
+    }
 
-    SCASSERT(m_data);
+    auto *pathTool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(ElementId()));
+    SCASSERT(pathTool != nullptr)
 
     if (m_newPath.GetType() == PiecePathType::InternalPath)
     {
-        const auto varData = m_data->DataDependencyVariables();
+        const auto varData = pathTool->getData()->DataDependencyVariables();
         Doc()->FindFormulaDependencies(m_newPath.GetVisibilityTrigger(), ElementId(), varData);
     }
 
@@ -142,7 +147,7 @@ void SavePiecePathOptions::redo()
         patternGraph->AddEdge(m_newPath.at(i).GetId(), ElementId());
     }
 
-    m_data->UpdatePiecePath(ElementId(), m_newPath);
+    pathTool->getData()->UpdatePiecePath(ElementId(), m_newPath);
 
     if (m_pieceId != NULL_ID)
     {

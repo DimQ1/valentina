@@ -5,6 +5,16 @@ CppApplication {
     Depends { name: "buildconfig" }
     Depends { name: "bundle"; condition: qbs.targetOS.contains("macos") }
     Depends { name: "macdeployqt"; condition: qbs.targetOS.contains("macos") }
+    // See VLib.qbs -- header-only immer backs VContainer's persistent storage and its headers
+    // reach every application through vcontainer.h.
+    Depends {
+        name: "immersystem"
+        condition: !(buildconfig.useConanPackages && buildconfig.conanImmerEnabled)
+    }
+    Depends {
+        name: "immer"
+        condition: buildconfig.useConanPackages && buildconfig.conanImmerEnabled
+    }
 
     qbsModuleProviders: {
         var providers = ["Qt"];
@@ -25,6 +35,15 @@ CppApplication {
         condition: qbs.targetOS.contains("macos")
         cpp.minimumMacosVersion: buildconfig.minimumMacosVersion
         codesign.enableCodeSigning: buildconfig.enableCodeSigning
+    }
+
+    Properties {
+        condition: qbs.targetOS.contains("windows") && qbs.toolchain.includes("msvc")
+        codesign.enableCodeSigning: buildconfig.enableCodeSigning
+        codesign.hashAlgorithm: buildconfig.signingHashAlgorithm
+        codesign.signingTimestamp: buildconfig.signingTimestamp
+        codesign.timestampAlgorithm: buildconfig.signingTimestampAlgorithm
+        codesign.codesignFlags: ["/sha1", buildconfig.signingThumbprint]
     }
 
     Properties {
@@ -84,17 +103,26 @@ CppApplication {
             if (qbs.toolchainType.contains("mingw"))
                 files.push("msvcr120.dll");
 
-            // Minimal supported OpenSSL version since Qt 5.12.4 is 1.1.1.
-            if (qbs.architecture.contains("x86_64")) {
+            const isQt6 = Qt.core.versionMajor >= 6 && Qt.core.versionMinor >= 2;
+
+            // Qt 6.2+ requires OpenSSL 3.x (x64 only); Qt 5.15 requires OpenSSL 1.1.1.
+            if (isQt6) {
                 files.push(
-                    "openssl/win64/libcrypto-1_1-x64.dll",
-                    "openssl/win64/libssl-1_1-x64.dll"
+                    "openssl/win64/libcrypto-3-x64.dll",
+                    "openssl/win64/libssl-3-x64.dll"
                 );
             } else {
-                files.push(
-                    "openssl/win32/libcrypto-1_1.dll",
-                    "openssl/win32/libssl-1_1.dll"
-                );
+                if (qbs.architecture.contains("x86_64")) {
+                    files.push(
+                        "openssl/win64/libcrypto-1_1-x64.dll",
+                        "openssl/win64/libssl-1_1-x64.dll"
+                    );
+                } else {
+                    files.push(
+                        "openssl/win32/libcrypto-1_1.dll",
+                        "openssl/win32/libssl-1_1.dll"
+                    );
+                }
             }
 
             return files;

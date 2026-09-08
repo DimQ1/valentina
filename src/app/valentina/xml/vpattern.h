@@ -38,6 +38,7 @@ class VNodeDetail;
 struct VToolSinglePointInitData;
 struct VToolLinePointInitData;
 class VToolSeamAllowance;
+class QTimer;
 
 /**
  * @brief The VPattern class working with pattern file.
@@ -54,6 +55,8 @@ public:
     void CreateEmptyFile() override;
 
     void Parse(const Document &parse);
+
+    void Clear() override;
 
     void setCurrentData();
     void UpdateToolData(const quint32 &id, VContainer *data) override;
@@ -140,7 +143,10 @@ private:
     VMainGraphicsScene *sceneDetail;
     QList<vidtype> updatePieces{};
 
-    QFutureWatcher<void> *m_refreshPieceGeometryWatcher;
+    /** @brief Debounce timer that coalesces piece geometry refreshes after a burst of parses
+     * (file open, interactive tool edits, measurement sync). A single restartable timer replaces
+     * the previous per-parse QTimer::singleShot so rapid parses collapse into one refresh. */
+    QTimer *m_refreshGeometryTimer;
 
     bool m_pieceGeometryDirty{true};
 
@@ -264,11 +270,13 @@ private:
     auto LastToolId() const -> quint32;
     auto PPLastToolId(int blockIndex) const -> quint32;
 
-    void PostRefreshActions();
-    void RefreshPieceGeometryForList(const QList<vidtype> &list) const;
-
     void GarbageCollector();
     void BackupBeforeGarbageCollector() const;
+
+    auto GCStaleModelingObjects(const VPatternGraph *graph) -> QSet<vidtype>;
+    auto GCStaleUnionTools(const VPatternGraph *graph) -> QSet<vidtype>;
+    auto GCRemoveFromModeling(const QSet<vidtype> &candidates) -> QSet<vidtype>;
+    void GCUpdateHistory(const QSet<vidtype> &removed);
 };
 
 #endif // VPATTERN_H

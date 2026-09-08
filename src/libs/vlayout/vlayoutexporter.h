@@ -39,6 +39,7 @@
 
 class QGraphicsScene;
 class QGraphicsItem;
+class QSvgGenerator;
 class VLayoutPiece;
 
 class VLayoutExporter
@@ -149,6 +150,8 @@ private:
     DXFApparelCompatibility m_dxfCompatibility{DXFApparelCompatibility::STANDARD};
 
     void ExportToPDF(QGraphicsScene *scene, const QList<QGraphicsItem *> &details, const QString &filename) const;
+    void RenderSVG(QSvgGenerator &generator, QGraphicsScene *scene) const;
+    void ExportPiecesAsSvgLayers(QGraphicsScene *scene, const QList<QGraphicsItem *> &details) const;
 };
 
 //---------------------------------------------------------------------------------------------------------------------

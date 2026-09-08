@@ -34,6 +34,8 @@
 #include <QObject>
 #include <QtGlobal>
 
+#include <immer/map.hpp>
+
 #include "../vgeometry/vabstractcurve.h"
 #include "../vmisc/def.h"
 #include "../vmisc/vabstractvalapplication.h"
@@ -78,11 +80,11 @@ public:
     void SetMode(const Mode &value);
 
     static auto FindLengthFromUser(const QString &expression,
-                                   const QHash<QString, QSharedPointer<VInternalVariable>> *vars, bool fromUser = true)
-        -> qreal;
+                                   const immer::map<QString, QSharedPointer<VInternalVariable>> *vars,
+                                   bool fromUser = true) -> qreal;
     static auto FindValFromUser(const QString &expression,
-                                const QHash<QString, QSharedPointer<VInternalVariable>> *vars, bool fromUser = true)
-        -> qreal;
+                                const immer::map<QString, QSharedPointer<VInternalVariable>> *vars,
+                                bool fromUser = true) -> qreal;
     static auto CorrectAngle(qreal angle) -> qreal;
 
     auto CurrentToolTip() const -> QString;
@@ -146,7 +148,8 @@ template <typename Item> inline void Visualization::AddItem(Item *item)
     SCASSERT(item != nullptr)
     auto *scene = qobject_cast<VMainGraphicsScene *>(VAbstractValApplication::VApp()->getCurrentScene());
     SCASSERT(scene != nullptr)
-
+    qCDebug(vVis) << "AddItem:" << static_cast<void *>(item)
+                  << "→ scene:" << static_cast<void *>(scene);
     scene->addItem(item);
     connect(scene, &VMainGraphicsScene::mouseMove, item, &Visualization::MousePos);
 }

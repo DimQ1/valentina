@@ -77,6 +77,8 @@ public:
     };
     auto getTagName() const -> QString override;
 
+    void TriggerChoosed() override { emit ChoosedTool(m_id, sceneType); }
+
     virtual void ShowHandles(bool show);
 
     auto GetLineColor() const -> QString;
@@ -292,6 +294,7 @@ protected:
         QString newP4Label{};
         QString oldAliasSuffix{};
         QString newAliasSuffix{};
+        quint32 newDuplicate{0};
 
         auto HasChanges() const -> bool
         {
@@ -344,6 +347,9 @@ protected:
     void ProcessArcToolOptions(const QDomElement &oldDomElement,
                                const QDomElement &newDomElement,
                                const ToolChanges &changes);
+
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
 
 private:
     Q_DISABLE_COPY_MOVE(VToolAbstractArc) // NOLINT

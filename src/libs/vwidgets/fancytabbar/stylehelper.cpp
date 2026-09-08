@@ -30,7 +30,7 @@
 #include "stylehelper.h"
 
 #include <QApplication>
-#include <QDebug>
+#include <QLoggingCategory>
 #include <QObject>
 #include <QPainter>
 #include <QPalette>
@@ -39,6 +39,14 @@
 #include <QStyleOption>
 #include <QWidget>
 #include <QtMath>
+
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_CLANG("-Wmissing-prototypes")
+QT_WARNING_DISABLE_INTEL(1418)
+
+Q_LOGGING_CATEGORY(styleHelper, "v.styleHelper") // NOLINT
+
+QT_WARNING_POP
 
 QColor StyleHelper::m_baseColor;          // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 QColor StyleHelper::m_requestedBaseColor; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
@@ -114,20 +122,24 @@ void StyleHelper::setBaseColor(const QColor &newcolor)
 
 //---------------------------------------------------------------------------------------------------------------------
 // Draws a cached pixmap with shadow
-void StyleHelper::drawIconWithShadow(const QIcon &icon, const QRect &rect, QPainter *p, QIcon::Mode iconMode,
-                                     int dipRadius, const QColor &color, const QPoint &dipOffset)
+void StyleHelper::drawIconWithShadow(const QIcon &icon,
+                                     const QRect &rect,
+                                     QPainter *p,
+                                     QIcon::Mode iconMode,
+                                     int dipRadius,
+                                     const QColor &color,
+                                     const QPoint &dipOffset)
 {
-    qDebug("StyleHelper::drawIconWithShadow: drawing icon with shadow");
-    qDebug() << " rect:" << rect << " iconMode:" << iconMode << " dipRadius:" << dipRadius << " color:" << color
-             << " dipOffset:" << dipOffset;
+    if (icon.isNull() || rect.isEmpty())
+    {
+        return; // Nothing to draw; a degenerate rect leads to null intermediate images below.
+    }
 
     QPixmap cache;
-    QString const pixmapName =
-        QString::fromLatin1("icon %0 %1 %2").arg(icon.cacheKey()).arg(iconMode).arg(rect.height());
 
-    qDebug() << " pixmapName:" << pixmapName;
-
-    if (!QPixmapCache::find(pixmapName, &cache))
+    if (QString const pixmapName
+        = QString::fromLatin1("icon %0 %1 %2").arg(icon.cacheKey()).arg(iconMode).arg(rect.height());
+        !QPixmapCache::find(pixmapName, &cache))
     {
         // High-dpi support: The in parameters (rect, radius, offset) are in
         // device-independent pixels. The call to QIcon::pixmap() below might
@@ -135,22 +147,31 @@ void StyleHelper::drawIconWithShadow(const QIcon &icon, const QRect &rect, QPain
         // different than 1. The shadow drawing caluculations are done in device
         // pixels.
         QPixmap px = icon.pixmap(rect.size());
-        qDebug() << " px size:" << px.size() << " DPR:" << px.devicePixelRatio();
         int const devicePixelRatio = qCeil(px.devicePixelRatio());
         int const radius = dipRadius * devicePixelRatio;
         QPoint const offset = dipOffset * devicePixelRatio;
         cache = QPixmap(px.size() + QSize(radius * 2, radius * 2));
+
+        // Any of the QImage/QPixmap allocations below can return a null buffer (degenerate size or
+        // out of memory). Painting on a null device triggers "engine == 0" warnings and, worse, a
+        // crash deep in Qt's paint/blur code. Fall back to a plain icon draw instead of that.
+        // Log at info level, not warning: this runs from a paint event, and in GUI mode a warning
+        // becomes a message box, one per icon draw.
+        if (px.isNull() || cache.isNull())
+        {
+            qCInfo(styleHelper) << "Skipping icon shadow: null buffer. rect:" << rect << "px size:" << px.size()
+                                << "radius:" << radius << "cache size:" << cache.size();
+            icon.paint(p, rect, Qt::AlignCenter, iconMode);
+            return;
+        }
+
         cache.fill(Qt::transparent);
 
-        qDebug() << " cache size:" << cache.size();
-
         QPainter cachePainter(&cache);
-        qDebug() << " cachePainter active? " << cachePainter.isActive();
 
         if (iconMode == QIcon::Disabled)
         {
             QImage im = px.toImage().convertToFormat(QImage::Format_ARGB32);
-            qDebug() << " Disabled mode: im size:" << im.size();
 
             for (int y = 0; y < im.height(); ++y)
             {
@@ -172,36 +193,37 @@ void StyleHelper::drawIconWithShadow(const QIcon &icon, const QRect &rect, QPain
 
         // Draw shadow
         QImage tmp(px.size() + QSize(radius * 2, radius * 2 + 1), QImage::Format_ARGB32_Premultiplied);
+
+        // blur the alpha channel
+        QImage blurred(tmp.size(), QImage::Format_ARGB32_Premultiplied);
+
+        if (tmp.isNull() || blurred.isNull())
+        {
+            qCInfo(styleHelper) << "Skipping icon shadow: null blur buffer. rect:" << rect << "px size:" << px.size()
+                                << "radius:" << radius << "tmp size:" << tmp.size()
+                                << "blurred size:" << blurred.size();
+            cachePainter.end();
+            icon.paint(p, rect, Qt::AlignCenter, iconMode);
+            return;
+        }
+
         tmp.fill(Qt::transparent);
-        qDebug() << " tmp QImage size:" << tmp.size();
 
         QPainter tmpPainter(&tmp);
-        qDebug() << " tmpPainter active? " << tmpPainter.isActive();
         tmpPainter.setCompositionMode(QPainter::CompositionMode_Source);
         tmpPainter.drawPixmap(QRect(radius, radius, px.width(), px.height()), px);
         tmpPainter.end();
 
-        // blur the alpha channel
-        QImage blurred(tmp.size(), QImage::Format_ARGB32_Premultiplied);
         blurred.fill(Qt::transparent);
-        qDebug() << " blurred QImage size:" << blurred.size();
 
         QPainter blurPainter(&blurred);
-        qDebug() << " blurPainter active? " << blurPainter.isActive();
         qt_blurImage(&blurPainter, tmp, radius, false, true);
         blurPainter.end();
 
         tmp = blurred;
 
         // blacken the image...
-        bool ok = tmpPainter.begin(&tmp);
-        qDebug() << " tmpPainter.begin() returned" << ok << " tmp size:" << tmp.size();
-        tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        tmpPainter.fillRect(tmp.rect(), color);
-        tmpPainter.end();
-
-        ok = tmpPainter.begin(&tmp);
-        qDebug() << " tmpPainter.begin() returned" << ok << " tmp size:" << tmp.size();
+        tmpPainter.begin(&tmp);
         tmpPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
         tmpPainter.fillRect(tmp.rect(), color);
         tmpPainter.end();
@@ -218,7 +240,5 @@ void StyleHelper::drawIconWithShadow(const QIcon &icon, const QRect &rect, QPain
     QRect targetRect = cache.rect();
     targetRect.setSize(targetRect.size() / cache.devicePixelRatio());
     targetRect.moveCenter(rect.center() - dipOffset);
-    qDebug() << " targetRect:" << targetRect;
     p->drawPixmap(targetRect, cache);
-    qDebug() << "drawIconWithShadow end";
 }

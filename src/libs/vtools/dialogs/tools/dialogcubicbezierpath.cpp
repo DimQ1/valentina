@@ -68,6 +68,9 @@ DialogCubicBezierPath::DialogCubicBezierPath(const VContainer *data,
     InitOkCancelApply(ui);
     bOk->setEnabled(false);
 
+    MakeFilterableComboBox(ui->comboBoxNewPoint);
+    MakeFilterableComboBox(ui->comboBoxPoint);
+
     FillComboBoxPoints(ui->comboBoxNewPoint);
     FillComboBoxPoints(ui->comboBoxPoint);
     InitColorPicker(ui->pushButtonColor, VAbstractValApplication::VApp()->ValentinaSettings()->GetUserToolColors());
@@ -94,7 +97,7 @@ DialogCubicBezierPath::DialogCubicBezierPath(const VContainer *data,
 
     connect(ui->lineEditAlias, &QLineEdit::textEdited, this, &DialogCubicBezierPath::ValidateAlias);
 
-    vis = new VisToolCubicBezierPath(data);
+    vis = new VisToolCubicBezierPath(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -163,7 +166,7 @@ void DialogCubicBezierPath::ChosenObject(quint32 id, const SceneObject &type)
             return;
         }
 
-        const auto point = data->GeometricObject<VPointF>(id);
+        const auto point = data.GeometricObject<VPointF>(id);
         NewItem(*point);
 
         SavePath();
@@ -200,7 +203,7 @@ void DialogCubicBezierPath::ShowDialog(bool click)
         // Accept only if all subpaths are completed
         emit ToolTip(QString());
 
-        if (not data->IsUnique(path.name()))
+        if (not data.IsUnique(path.name()))
         {
             path.SetDuplicate(DNumber(path.name()));
         }
@@ -223,7 +226,7 @@ void DialogCubicBezierPath::SaveData()
     if (!m_oldName.isEmpty() && m_oldName != path.name())
     {
         path.SetDuplicate(0);
-        if (!data->IsUnique(path.name()))
+        if (!data.IsUnique(path.name()))
         {
             path.SetDuplicate(DNumber(path.name()));
             m_oldName = path.name();
@@ -263,7 +266,7 @@ void DialogCubicBezierPath::currentPointChanged(int index)
     try
     {
         QListWidgetItem *item = ui->listWidget->item(ui->listWidget->currentRow());
-        const auto point = data->GeometricObject<VPointF>(id);
+        const auto point = data.GeometricObject<VPointF>(id);
         DataPoint(*point);
         item->setData(Qt::UserRole, QVariant::fromValue(*point));
 
@@ -285,7 +288,7 @@ void DialogCubicBezierPath::ValidateAlias()
     if (QRegularExpression const rx(NameRegExp());
         not ui->lineEditAlias->text().isEmpty() &&
         (not rx.match(tempPath.GetAlias()).hasMatch() ||
-         (originAliasSuffix != ui->lineEditAlias->text() && not data->IsUnique(tempPath.GetAlias()))))
+         (originAliasSuffix != ui->lineEditAlias->text() && not data.IsUnique(tempPath.GetAlias()))))
     {
         flagAlias = false;
         ChangeColor(ui->labelAlias, errorColor);
@@ -308,8 +311,14 @@ void DialogCubicBezierPath::NewPointChanged()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogCubicBezierPath::AddPoint()
 {
+    if (ui->comboBoxNewPoint->currentIndex() == -1)
+    {
+        return; // Nothing selected. Can happen if a pattern change re-enabled the button (see
+                // CheckDependencyTreeComplete()) while the combo box was empty.
+    }
+
     const auto id = qvariant_cast<quint32>(ui->comboBoxNewPoint->currentData());
-    const auto point = data->GeometricObject<VPointF>(id);
+    const auto point = data.GeometricObject<VPointF>(id);
     NewItem(*point);
     SavePath();
 
@@ -522,7 +531,7 @@ void DialogCubicBezierPath::SetDefColor(const QString &value)
 void DialogCubicBezierPath::CheckDependencyTreeComplete()
 {
     m_dependencyReady = m_doc->IsPatternGraphComplete();
-    ui->toolButtonAddPoint->setEnabled(m_dependencyReady);
+    ui->toolButtonAddPoint->setEnabled(m_dependencyReady && ui->comboBoxNewPoint->currentIndex() != -1);
     ui->toolButtonRemovePoint->setEnabled(m_dependencyReady);
     ui->toolButtonTop->setEnabled(m_dependencyReady);
     ui->toolButtonUp->setEnabled(m_dependencyReady);

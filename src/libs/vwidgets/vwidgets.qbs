@@ -22,6 +22,10 @@ VLib {
         "vmaingraphicsview.cpp",
         "vmousewheelwidgetadjustmentguard.cpp",
         "vmousewheelwidgetadjustmentguard.h",
+        "vscrollablemenu.cpp",
+        "vscrollablemenu.h",
+        "vsegmentlabel.cpp",
+        "vsegmentlabel.h",
         "vsponsorcredits.cpp",
         "vsponsorcredits.h",
         "vtoolbuttonpopup.cpp",
@@ -76,6 +80,11 @@ VLib {
         "vpiecegrainline.h",
         "vpiecegrainline.cpp",
         "vpiecegrainline_p.h",
+        "labelarrange/labelarrangetypes.h",
+        "labelarrange/vlabelarrangeengine.h",
+        "labelarrange/vlabelarrangeengine.cpp",
+        "labelarrange/vdrawlabelcollector.h",
+        "labelarrange/vdrawlabelcollector.cpp",
     ]
 
     Export {

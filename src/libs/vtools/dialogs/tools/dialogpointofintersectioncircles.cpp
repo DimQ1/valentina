@@ -64,6 +64,9 @@ DialogPointOfIntersectionCircles::DialogPointOfIntersectionCircles(const VContai
 
     InitIcons();
 
+    MakeFilterableComboBox(ui->comboBoxCircle1Center);
+    MakeFilterableComboBox(ui->comboBoxCircle2Center);
+
     ui->lineEditNamePoint->setClearButtonEnabled(true);
 
     ui->lineEditNamePoint->setText(
@@ -90,7 +93,7 @@ DialogPointOfIntersectionCircles::DialogPointOfIntersectionCircles(const VContai
     connect(ui->lineEditNamePoint, &QLineEdit::textChanged, this,
             [this]()
             {
-                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, this->data,
+                CheckPointLabel(this, ui->lineEditNamePoint, ui->labelEditNamePoint, m_pointName, &this->data,
                                 m_flagName);
                 CheckState();
             });
@@ -115,7 +118,7 @@ DialogPointOfIntersectionCircles::DialogPointOfIntersectionCircles(const VContai
     connect(ui->pushButtonGrowCircle2Radius, &QPushButton::clicked, this,
             &DialogPointOfIntersectionCircles::DeployCircle2RadiusTextEdit);
 
-    vis = new VisToolPointOfIntersectionCircles(data);
+    vis = new VisToolPointOfIntersectionCircles(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -191,9 +194,14 @@ void DialogPointOfIntersectionCircles::SetFirstCircleRadius(const QString &value
     }
     ui->plainTextEditCircle1Radius->setPlainText(formula);
 
-    auto *point = qobject_cast<VisToolPointOfIntersectionCircles *>(vis);
-    SCASSERT(point != nullptr)
-    point->SetC1Radius(formula);
+    if (auto *point = qobject_cast<VisToolPointOfIntersectionCircles *>(vis))
+    {
+        point->SetC1Radius(formula);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditCircle1Radius);
 }
@@ -217,9 +225,14 @@ void DialogPointOfIntersectionCircles::SetSecondCircleRadius(const QString &valu
     }
     ui->plainTextEditCircle2Radius->setPlainText(formula);
 
-    auto *point = qobject_cast<VisToolPointOfIntersectionCircles *>(vis);
-    SCASSERT(point != nullptr)
-    point->SetC2Radius(formula);
+    if (auto *point = qobject_cast<VisToolPointOfIntersectionCircles *>(vis))
+    {
+        point->SetC2Radius(formula);
+    }
+    else
+    {
+        qCWarning(vDialog, "%s: visualization unavailable, skipping preview update.", Q_FUNC_INFO);
+    }
 
     MoveCursorToEnd(ui->plainTextEditCircle2Radius);
 }
@@ -266,20 +279,20 @@ void DialogPointOfIntersectionCircles::ShowDialog(bool click)
         SCASSERT(scene != nullptr)
 
         QSharedPointer<VPointF> const center =
-            data->GeometricObject<VPointF>(m_stage == 1 ? GetFirstCircleCenterId() : GetSecondCircleCenterId());
+            data.GeometricObject<VPointF>(m_stage == 1 ? GetFirstCircleCenterId() : GetSecondCircleCenterId());
 
         QLineF const line(static_cast<QPointF>(*center), scene->getScenePos());
 
         if (m_stage == 1)
         {
-            SetFirstCircleRadius(QString::number(FromPixel(line.length(), *data->GetPatternUnit())));
+            SetFirstCircleRadius(QString::number(FromPixel(line.length(), *data.GetPatternUnit())));
             emit ToolTip(tr("Select second circle center"));
             ++m_stage;
             m_firstRelease = false;
         }
         else
         {
-            SetSecondCircleRadius(QString::number(FromPixel(line.length(), *data->GetPatternUnit())));
+            SetSecondCircleRadius(QString::number(FromPixel(line.length(), *data.GetPatternUnit())));
             ++m_stage;
         }
 
@@ -394,7 +407,7 @@ void DialogPointOfIntersectionCircles::DeployCircle2RadiusTextEdit()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogPointOfIntersectionCircles::FXCircle1Radius()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit first circle radius"));
     dialog->SetFormula(GetFirstCircleRadius());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -408,7 +421,7 @@ void DialogPointOfIntersectionCircles::FXCircle1Radius()
 //---------------------------------------------------------------------------------------------------------------------
 void DialogPointOfIntersectionCircles::FXCircle2Radius()
 {
-    auto *dialog = new DialogEditWrongFormula(data, toolId, this);
+    auto *dialog = new DialogEditWrongFormula(&data, toolId, this);
     dialog->setWindowTitle(tr("Edit second circle radius"));
     dialog->SetFormula(GetSecondCircleRadius());
     dialog->setPostfix(UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true));
@@ -423,7 +436,7 @@ void DialogPointOfIntersectionCircles::FXCircle2Radius()
 void DialogPointOfIntersectionCircles::EvalCircle1Radius()
 {
     const qreal radius = Eval({.formula = ui->plainTextEditCircle1Radius->toPlainText(),
-                               .variables = data->DataVariables(),
+                               .variables = data.DataVariables(),
                                .labelEditFormula = ui->labelEditCircle1Radius,
                                .labelResult = ui->labelResultCircle1Radius,
                                .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},
@@ -444,7 +457,7 @@ void DialogPointOfIntersectionCircles::EvalCircle1Radius()
 void DialogPointOfIntersectionCircles::EvalCircle2Radius()
 {
     const qreal radius = Eval({.formula = ui->plainTextEditCircle2Radius->toPlainText(),
-                               .variables = data->DataVariables(),
+                               .variables = data.DataVariables(),
                                .labelEditFormula = ui->labelEditCircle2Radius,
                                .labelResult = ui->labelResultCircle2Radius,
                                .postfix = UnitsToStr(VAbstractValApplication::VApp()->patternUnits(), true)},

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Upload debug symbols to BugSplat using the symbol-upload tool.
+Upload debug symbols to BugSplat using the symbol-upload tool, and durably
+store a copy of each artifact in a Cloudflare R2 bucket.
 
 Per-platform targets and debug artifact types:
 
@@ -12,13 +13,15 @@ Per-platform targets and debug artifact types:
 Excluded targets (never uploaded): parserTest, collectionTest, translationsTest
 
 Version string format:
-    <app_version>-<git_hash>-<qt_version>-<platform>[‑multibundle]
+    <app_version>-<git_hash>-<qt_version>-<platform>[-multibundle]
+
+    macOS always ships as a multibundle (Valentina.app + Tape.app + Puzzle.app),
+    so the suffix is appended automatically for that platform, not a flag.
 
     Examples:
         1_1_0-gf4373acf9-Qt_6_2-linux
         1_1_0-gf4373acf9-Qt_6_10-macos-multibundle
         1_1_0-g12e950caa-Qt_6_10-windows
-        1_1_0-g12e950caa-Qt_6_10-macos
 
 Authentication — set ONE of the two pairs as environment variables:
     SYMBOL_UPLOAD_USER          BugSplat account email
@@ -28,30 +31,45 @@ Authentication — set ONE of the two pairs as environment variables:
     SYMBOL_UPLOAD_CLIENT_SECRET OAuth2 Client Credentials Client Secret
 
 Required environment variable:
-    BUGSPLAT_DATABASE           Your BugSplat database name
+    BUGSPLAT_DATABASE                     Your BugSplat database name
+
+Required environment variables for the R2 debug-symbol store:
+    R2_ACCOUNT_ID                         Cloudflare account ID
+    R2_DEBUG_SYMBOLS_ACCESS_KEY_ID        R2 access key ID
+    R2_DEBUG_SYMBOLS_SECRET_ACCESS_KEY    R2 secret access key
+    R2_DEBUG_SYMBOLS_BUCKET               R2 bucket name to store symbols in
 
 Usage:
     python upload_symbols.py \\
         --build-dir   <path>    \\
         --app-version <ver>     \\
         --git-hash    <hash>    \\
+        --commit-sha  <sha>     \\
         --qt-version  <qtver>   \\
-        [--platform   <plat>]   \\
-        [--multibundle]
+        --arch        <arch>    \\
+        [--platform   <plat>]
 
 Examples:
     python upload_symbols.py \\
-        --build-dir ./build --app-version 1_1_0 --git-hash gf4373acf9 --qt-version Qt_6_2
+        --build-dir ./build --app-version 1_1_0 --git-hash gf4373acf9 \\
+        --commit-sha f4373acf9c1234567890abcdef1234567890abcd --qt-version Qt_6_2 \\
+        --arch x86_64
 
     python upload_symbols.py \\
-        --build-dir ./build --app-version 1_1_0 --git-hash gf4373acf9 --qt-version Qt_6_10 \\
-        --platform macos --multibundle
+        --build-dir ./build --app-version 1_1_0 --git-hash gf4373acf9 \\
+        --commit-sha f4373acf9c1234567890abcdef1234567890abcd --qt-version Qt_6_10 \\
+        --arch armv8 --platform macos
 """
 
 import argparse
+import lzma
 import os
+import shutil
+import string
 import subprocess
 import sys
+import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -127,16 +145,127 @@ TARGETS_BY_PLATFORM: dict[str, list[Target]] = {
 }
 
 
+# ── R2 debug-symbol store ──────────────────────────────────────────────────────
+
+R2_EXTENSION: dict[str, str] = {"linux": "debug.xz", "windows": "pdb.xz", "macos": "dsym.tar.xz"}
+
+# Max xz compression -- this runs once per CI build, not per user, so the slower
+# EXTREME pass is worth it for the smaller durable copy.
+XZ_PRESET = 9 | lzma.PRESET_EXTREME
+
+
+def r2_symbol_key(platform: str, commit_sha: str, arch: str, application: str) -> str:
+    """
+    Build the R2 object key for a durably-stored debug artifact.
+
+    The arch segment is always present, even for platforms that only ever
+    build one architecture today (Linux, Windows) -- macOS already ships two
+    (x64, armv8) from independent CI jobs that would otherwise upload to the
+    identical key and silently clobber each other's symbols. Keeping every
+    platform's key shape uniform means a future second architecture on any
+    platform needs no key-format change, just a new --arch value.
+
+    Filenames are normalized to '<application>.<ext>' rather than the raw
+    on-disk name (which varies for versioned Linux shared libraries), per
+    the debug-symbols service spec's bucket layout.
+    """
+    if platform not in R2_EXTENSION:
+        raise SystemExit(f"[ERROR] Unknown platform {platform!r} for R2 key construction.")
+    return f"builds/{commit_sha}/{platform}/{arch}/{application}.{R2_EXTENSION[platform]}"
+
+
+R2_SYMBOL_STORE_ENV_VARS = (
+    "R2_ACCOUNT_ID",
+    "R2_DEBUG_SYMBOLS_ACCESS_KEY_ID",
+    "R2_DEBUG_SYMBOLS_SECRET_ACCESS_KEY",
+    "R2_DEBUG_SYMBOLS_BUCKET",
+)
+
+
+def r2_symbol_store_config(env: dict | None = None) -> dict[str, str]:
+    """Read R2 debug-symbol-store credentials from the environment. Never echoes values."""
+    env = os.environ if env is None else env
+    missing = [name for name in R2_SYMBOL_STORE_ENV_VARS if not env.get(name)]
+    if missing:
+        raise SystemExit(
+            "[ERROR] Missing required environment variable(s) for the R2 symbol store: "
+            f"{', '.join(missing)}."
+        )
+    return {name: env[name] for name in R2_SYMBOL_STORE_ENV_VARS}
+
+
+def get_r2_client(config: dict[str, str]):
+    """Construct a boto3 S3-compatible client for the R2 debug-symbol store."""
+    import boto3  # deferred: only CI installs it, developer checkouts do not have it
+
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{config['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+        aws_access_key_id=config["R2_DEBUG_SYMBOLS_ACCESS_KEY_ID"],
+        aws_secret_access_key=config["R2_DEBUG_SYMBOLS_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
+
+
+def upload_to_symbol_store(
+    client,
+    bucket: str,
+    target: Target,
+    artifact_path: Path,
+    platform: str,
+    commit_sha: str,
+    arch: str,
+) -> None:
+    """
+    Upload one already-located artifact to the R2 debug-symbol store.
+
+    Runs after upload_target() (BugSplat) has already succeeded for this target,
+    so a failed R2 upload here doesn't take down the BugSplat copy already made.
+    """
+    key = r2_symbol_key(platform, commit_sha, arch, target.application)
+
+    # Scratch path outside the tree being packaged -- it must not itself become
+    # something the workflow's blanket debug-file-strip step has to know to skip.
+    scratch_dir = Path(tempfile.mkdtemp())
+
+    if target.is_dir:
+        # macOS .dSYM is a bundle (directory); R2 objects are flat files. arcname
+        # (rather than adding artifact_path itself) preserves the bundle's own
+        # directory name as the tar's top-level entry -- otherwise the archive
+        # would contain only the bundle's *contents*, losing the name that
+        # identifies which binary the DWARF data belongs to.
+        upload_path = scratch_dir / f"{target.application}.{R2_EXTENSION['macos']}"
+        with tarfile.open(upload_path, "w:xz", preset=XZ_PRESET) as tar:
+            tar.add(artifact_path, arcname=artifact_path.name)
+    else:
+        upload_path = scratch_dir / f"{target.application}.{R2_EXTENSION[platform]}"
+        with open(artifact_path, "rb") as src, lzma.open(upload_path, "wb", preset=XZ_PRESET) as dst:
+            shutil.copyfileobj(src, dst)
+
+    print(f"[INFO] Uploading '{target.application}' to R2 key '{key}'")
+
+    try:
+        try:
+            client.upload_file(str(upload_path), bucket, key)
+        except Exception as exc:
+            raise SystemExit(f"[ERROR] R2 upload failed for '{target.application}' ({exc}).")
+    finally:
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+
+    print(f"[OK]   '{target.application}' stored in R2.\n")
+
+
 # ── Version builder ────────────────────────────────────────────────────────────
 
-def build_version(app_version: str, git_hash: str, qt_version: str,
-                  platform: str, multibundle: bool) -> str:
+def build_version(app_version: str, git_hash: str, qt_version: str, platform: str) -> str:
     """
     Assemble the BugSplat version string, e.g.:
         1_1_0-gf4373acf9-Qt_6_10-macos-multibundle
+
+    macOS always ships as a multibundle, so the suffix is unconditional there.
     """
     parts = [app_version, git_hash, qt_version, platform]
-    if multibundle:
+    if platform == "macos":
         parts.append("multibundle")
     return "-".join(parts)
 
@@ -159,6 +288,21 @@ def get_env(name: str) -> str:
             f"[ERROR] Required environment variable '{name}' is not set or empty."
         )
     return value
+
+
+def validate_commit_sha(commit_sha: str) -> None:
+    """
+    Reject anything that isn't a full 40-character hex git commit sha.
+
+    Guards against accidentally passing an abbreviated hash (e.g. the value
+    meant for --git-hash) to --commit-sha, which would otherwise silently
+    build a valid-looking but wrong R2 key with no error.
+    """
+    if len(commit_sha) != 40 or not all(c in string.hexdigits for c in commit_sha):
+        raise SystemExit(
+            f"[ERROR] --commit-sha must be a full 40-character hex git commit sha "
+            f"(git rev-parse HEAD), got {commit_sha!r}."
+        )
 
 
 def resolve_auth() -> list[str]:
@@ -281,7 +425,7 @@ def upload_target(
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Upload BugSplat debug symbols for the Valentina project.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -303,9 +447,25 @@ def parse_args() -> argparse.Namespace:
         help="Short git commit hash, e.g. gf4373acf9.",
     )
     parser.add_argument(
+        "--commit-sha",
+        required=True, metavar="SHA",
+        help="Full 40-character git commit sha (git rev-parse HEAD). Used as the R2 "
+             "debug-symbol-store key prefix. Crash reports carry an abbreviated "
+             "revision, not this full sha; lookup resolves by prefix match against "
+             "this value.",
+    )
+    parser.add_argument(
         "--qt-version",
         required=True, metavar="QT_VERSION",
         help="Qt version with underscores, e.g. Qt_6_10.",
+    )
+    parser.add_argument(
+        "--arch",
+        required=True, metavar="ARCH",
+        help="Build architecture, e.g. x86_64, x64, armv8. Always part of the R2 "
+             "debug-symbol-store key, even on platforms that build only one "
+             "architecture today, so a platform gaining a second one later needs "
+             "no key-format change.",
     )
     parser.add_argument(
         "--platform",
@@ -313,34 +473,28 @@ def parse_args() -> argparse.Namespace:
         default=None, metavar="PLATFORM",
         help="Target platform. Auto-detected from the host OS when omitted.",
     )
-    parser.add_argument(
-        "--multibundle",
-        action="store_true", default=False,
-        help="Append '-multibundle' suffix to the version string (macOS only).",
-    )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     args = parse_args()
+    validate_commit_sha(args.commit_sha)
 
     database   = get_env("BUGSPLAT_DATABASE")
     auth_flags = resolve_auth()
 
-    platform = args.platform or detect_platform()
+    r2_config = r2_symbol_store_config()
+    r2_client = get_r2_client(r2_config)
 
-    if args.multibundle and platform != "macos":
-        print(f"[WARN] --multibundle is set but platform is '{platform}'. "
-              "The suffix will still be appended as requested.")
+    platform = args.platform or detect_platform()
 
     version = build_version(
         app_version = args.app_version,
         git_hash    = args.git_hash,
         qt_version  = args.qt_version,
         platform    = platform,
-        multibundle = args.multibundle,
     )
 
     build_dir: Path = args.build_dir.resolve()
@@ -377,6 +531,16 @@ def main() -> None:
             auth_flags    = auth_flags,
         )
         uploaded += 1
+
+        upload_to_symbol_store(
+            client        = r2_client,
+            bucket        = r2_config["R2_DEBUG_SYMBOLS_BUCKET"],
+            target        = target,
+            artifact_path = artifact_path,
+            platform      = platform,
+            commit_sha    = args.commit_sha,
+            arch          = args.arch,
+        )
 
     print(f"[INFO] Uploaded : {uploaded} / {len(targets)} target(s).")
     if missing:

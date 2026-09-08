@@ -41,8 +41,6 @@
 #include <QRectF>
 #include <QSharedPointer>
 
-#include "../../../vgeometry/vpointf.h"
-#include "../../../vwidgets/vgraphicssimpletextitem.h"
 #include "../../undocommands/label/movelabel.h"
 #include "../../undocommands/label/showlabel.h"
 #include "../ifc/ifcdef.h"
@@ -51,17 +49,19 @@
 #include "../ifc/xml/vpatterngraph.h"
 #include "../vabstracttool.h"
 #include "../vdatatool.h"
+#include "../vgeometry/vpointf.h"
 #include "../vmisc/theme/themeDef.h"
 #include "../vmisc/vabstractapplication.h"
 #include "../vpatterndb/vcontainer.h"
 #include "../vpatterndb/vpiecenode.h"
 #include "../vtoolseamallowance.h"
 #include "../vwidgets/global.h"
+#include "../vwidgets/labelarrange/labelarrangetypes.h"
 #include "../vwidgets/scalesceneitems.h"
+#include "../vwidgets/vgraphicssimpletextitem.h"
 #include "../vwidgets/vmaingraphicsscene.h"
 #include "../vwidgets/vmaingraphicsview.h"
 #include "vabstractnode.h"
-#include "vtools/tools/vinteractivetool.h"
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
 #include "../vmisc/compatibility.h"
@@ -134,7 +134,22 @@ VNodePoint::VNodePoint(const VAbstractNodeInitData &initData, QObject *qoParent,
             &VGraphicsSimpleTextItem::ShowContextMenu,
             this,
             [this](QGraphicsSceneContextMenuEvent *event) -> void { contextMenuEvent(event); });
+    // Ugly, but there is no other way
+    connect(
+        m_namePoint,
+        &VGraphicsSimpleTextItem::UpdateLine,
+        this,
+        [this]() -> void { RefreshLine(); },
+        Qt::QueuedConnection);
+    connect(m_namePoint, &VGraphicsSimpleTextItem::LabelHovered, this,
+            [this](bool hovered)
+            {
+                m_isHovered = hovered;
+                RefreshHoverPen();
+            });
     m_lineName->SetColorRole(VColorRole::PieceNodeLabelLineColor);
+    QGraphicsItem::setData(LabelKindRole, static_cast<int>(LabelMoveRequest::Kind::Point));
+    QGraphicsItem::setData(LabelToolIdRole, static_cast<quint32>(m_id));
     RefreshPointGeometry(*VAbstractTool::data.GeometricObject<VPointF>(initData.id));
     ToolCreation(initData.typeCreation);
     setCursor(Qt::ArrowCursor);
@@ -157,10 +172,10 @@ void VNodePoint::Create(const VAbstractNodeInitData &initData)
     {
         point = initData.data->GeometricObject<VPointF>(initData.idObject);
     }
-    catch (const VExceptionBadId &)
+    catch (const VExceptionBadId &e)
     { // Possible case. Parent was deleted, but the node object is still here.
         qDebug() << "Broken relation. Parent was deleted, but the node object is still here. Node point id ="
-                 << initData.id << ".";
+                 << initData.id << "." << e.ErrorMessage();
         return; // Just ignore
     }
 
@@ -170,6 +185,7 @@ void VNodePoint::Create(const VAbstractNodeInitData &initData)
     p->setIdObject(initData.idObject);
     p->setMode(Draw::Modeling);
     p->SetShowLabel(initData.showLabel);
+    p->SetShowLabelExplicit(initData.showLabelExplicit);
     p->setMx(initData.mx);
     p->setMy(initData.my);
 
@@ -239,6 +255,13 @@ void VNodePoint::SetLabelVisible(quint32 id, bool visible)
     {
         const QSharedPointer<VPointF> point = VAbstractTool::data.GeometricObject<VPointF>(id);
         point->SetShowLabel(visible);
+        point->SetShowLabelExplicit(true);
+
+        if (m_internalPathNode && IsOnlyPoint())
+        {
+            SetOnlyPoint(false);
+        }
+
         RefreshPointGeometry(*point);
         if (QGraphicsScene *sc = scene())
         {
@@ -283,7 +306,10 @@ void VNodePoint::AddToFile()
     doc->SetAttribute(domElement, AttrIdObject, idNode);
     doc->SetAttribute(domElement, AttrMx, VAbstractValApplication::VApp()->fromPixel(point->mx()));
     doc->SetAttribute(domElement, AttrMy, VAbstractValApplication::VApp()->fromPixel(point->my()));
-    doc->SetAttribute<bool>(domElement, AttrShowLabel, point->IsShowLabel());
+    doc->SetAttributeOrRemoveIf<bool>(domElement,
+                                      AttrShowLabel,
+                                      point->IsShowLabel(),
+                                      [](bool show) noexcept -> bool { return show; });
     if (idTool != NULL_ID)
     {
         doc->SetAttribute(domElement, AttrIdTool, idTool);
@@ -340,7 +366,15 @@ auto VNodePoint::InitContextMenu(QMenu *menu, vidtype pieceId, RemoveStatus stat
 
     QAction *actionShowLabel = menu->addAction(QCoreApplication::translate("VNodePoint", "Show label"));
     actionShowLabel->setCheckable(true);
-    actionShowLabel->setChecked(VAbstractTool::data.GeometricObject<VPointF>(m_id)->IsShowLabel());
+
+    if (const QSharedPointer<VPointF> point = VAbstractTool::data.GeometricObject<VPointF>(m_id); !m_internalPathNode)
+    {
+        actionShowLabel->setChecked(point->IsShowLabel());
+    }
+    else
+    {
+        actionShowLabel->setChecked(point->IsShowLabelExplicit() ? point->IsShowLabel() : false);
+    }
     contextMenu.insert(static_cast<int>(ContextMenuOption::ShowLabel), actionShowLabel);
 
     InitPassmarkMenu(menu, pieceId, contextMenu);
@@ -380,7 +414,7 @@ auto VNodePoint::InitContextMenu(QMenu *menu, vidtype pieceId, RemoveStatus stat
     showFullPieceOption->setCheckable(true);
     {
         // We cannot use current VContainer because it doesn't have current seam allowance value
-        const VContainer pData = VAbstractPattern::getTool(pieceId)->getData();
+        const VContainer pData = VAbstractPattern::getTool(pieceId)->GetDataCopy();
         const QLineF mirrorLine = detail.SeamAllowanceMirrorLine(&pData);
         showFullPieceOption->setEnabled(not mirrorLine.isNull());
         showFullPieceOption->setChecked(true);
@@ -470,24 +504,19 @@ void VNodePoint::InitPassmarkMenu(QMenu *menu, vidtype pieceId, QHash<int, QActi
 //---------------------------------------------------------------------------------------------------------------------
 void VNodePoint::InitAngleTypeMenu(QMenu *menu, vidtype pieceId, QHash<int, QAction *> &contextMenu)
 {
-    QMenu *angleTypeMenu = menu->addMenu(tr("Seam allowance angle"));
-    PieceNodeAngle curType = PieceNodeAngle::ByLength;
-
     const VPiece detail = VAbstractTool::data.GetPiece(pieceId);
     const VPiecePath &path = detail.GetPath();
     const int nodeIndex = path.indexOfNode(m_id);
-    if (nodeIndex != -1)
+    if (nodeIndex == -1)
     {
-        curType = path.at(nodeIndex).GetAngleType();
-
-        angleTypeMenu->setEnabled(detail.IsSeamAllowance() && not detail.IsSeamAllowanceBuiltIn());
-    }
-    else
-    {
-        angleTypeMenu->setVisible(false);
+        return;
     }
 
-    auto InitAngleAction = [angleTypeMenu, curType](const QString &name, PieceNodeAngle checkType)
+    const PieceNodeAngle curType = path.at(nodeIndex).GetAngleType();
+    QMenu *angleTypeMenu = menu->addMenu(tr("Seam allowance angle"));
+    angleTypeMenu->setEnabled(detail.IsSeamAllowance() && not detail.IsSeamAllowanceBuiltIn());
+
+    auto InitAngleAction = [angleTypeMenu, curType](const QString &name, PieceNodeAngle checkType) -> QAction *
     {
         QAction *action = angleTypeMenu->addAction(name);
         action->setCheckable(true);
@@ -782,4 +811,18 @@ void VNodePoint::AllowLabelHover(bool enabled)
 void VNodePoint::AllowLabelSelecting(bool enabled)
 {
     m_namePoint->setFlag(QGraphicsItem::ItemIsSelectable, enabled);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VNodePoint::SetInternalPathNode(bool internalPathNode)
+{
+    m_internalPathNode = internalPathNode;
+    bool onlyPoint = false;
+    if (const QSharedPointer<VPointF> point = VAbstractTool::data.GeometricObject<VPointF>(m_id);
+        m_internalPathNode && !point->IsShowLabelExplicit())
+    {
+        onlyPoint = true;
+    }
+
+    SetOnlyPoint(onlyPoint);
 }

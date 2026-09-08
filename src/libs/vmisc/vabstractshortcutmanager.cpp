@@ -67,7 +67,7 @@ void VAbstractShortcutManager::UpdateActionShortcuts(const QMultiHash<VShortcutA
     {
         const auto actionList = actions.values(shortcut.type);
 
-        for (const auto &action : actionList)
+        for (QAction *action : actionList)
         {
             if (action)
             {
@@ -84,7 +84,7 @@ void VAbstractShortcutManager::UpdateButtonShortcut(const QMultiHash<VShortcutAc
     {
         const auto buttonList = buttons.values(shortcut.type);
 
-        for (const auto &button : buttonList)
+        for (QAbstractButton *button : buttonList)
         {
             if (button)
             {
@@ -107,7 +107,7 @@ auto VAbstractShortcutManager::GetShortcutsList() const -> QList<VAbstractShortc
 //---------------------------------------------------------------------------------------------------------------------
 auto VAbstractShortcutManager::ShortcutActionToString(VShortcutAction type) -> QString
 {
-    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 87, "Convert all actions.");
+    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 89, "Convert all actions.");
 
     switch (type)
     {
@@ -163,6 +163,8 @@ auto VAbstractShortcutManager::ShortcutActionToString(VShortcutAction type) -> Q
             return "lasttool"_L1;
         case VShortcutAction::CurveDetails:
             return "curvedetails"_L1;
+        case VShortcutAction::ShowSegmentLabels:
+            return "showsegmentlabels"_L1;
         case VShortcutAction::FinalMeasurements:
             return "finalmeasurements"_L1;
         case VShortcutAction::ReloadPieceLabels:
@@ -285,6 +287,8 @@ auto VAbstractShortcutManager::ShortcutActionToString(VShortcutAction type) -> Q
             return "toolparallelcurve"_L1;
         case VShortcutAction::ToolGraduatedCurve:
             return "toolgraduatedcurve"_L1;
+        case VShortcutAction::AutoArrangeLabels:
+            return "autoarrangelabels"_L1;
         case VShortcutAction::LAST_ONE_DO_NOT_USE:
             Q_UNREACHABLE();
             break;
@@ -297,7 +301,7 @@ auto VAbstractShortcutManager::ShortcutActionToString(VShortcutAction type) -> Q
 //---------------------------------------------------------------------------------------------------------------------
 auto VAbstractShortcutManager::ReadableName(VShortcutAction type) -> QString
 {
-    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 87, "Translate all actions.");
+    Q_STATIC_ASSERT_X(static_cast<int>(VShortcutAction::LAST_ONE_DO_NOT_USE) == 89, "Translate all actions.");
 
     switch (type)
     {
@@ -353,6 +357,8 @@ auto VAbstractShortcutManager::ReadableName(VShortcutAction type) -> QString
             return tr("Activate last used tool", "shortcut for action");
         case VShortcutAction::CurveDetails:
             return tr("Show curve details", "shortcut for action");
+        case VShortcutAction::ShowSegmentLabels:
+            return tr("Show/hide segment labels", "shortcut for action");
         case VShortcutAction::FinalMeasurements:
             return tr("Open final measurements dialog", "shortcut for action");
         case VShortcutAction::ReloadPieceLabels:
@@ -475,6 +481,8 @@ auto VAbstractShortcutManager::ReadableName(VShortcutAction type) -> QString
             return tr("Tool 'Parallel curve'", "shortcut for action");
         case VShortcutAction::ToolGraduatedCurve:
             return tr("Tool 'Graduated curve'", "shortcut for action");
+        case VShortcutAction::AutoArrangeLabels:
+            return tr("Auto-arrange labels", "shortcut for action");
         case VShortcutAction::LAST_ONE_DO_NOT_USE:
             Q_UNREACHABLE(); //-V501
             break;

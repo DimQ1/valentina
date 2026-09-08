@@ -60,6 +60,12 @@ DialogTrueDarts::DialogTrueDarts(const VContainer *data, VAbstractPattern *doc, 
 {
     ui->setupUi(this);
 
+    MakeFilterableComboBox(ui->comboBoxFirstBasePoint);
+    MakeFilterableComboBox(ui->comboBoxSecondBasePoint);
+    MakeFilterableComboBox(ui->comboBoxFirstDartPoint);
+    MakeFilterableComboBox(ui->comboBoxSecondDartPoint);
+    MakeFilterableComboBox(ui->comboBoxThirdDartPoint);
+
     ui->lineEditFirstNewDartPoint->setClearButtonEnabled(true);
     ui->lineEditSecondNewDartPoint->setClearButtonEnabled(true);
 
@@ -81,7 +87,7 @@ DialogTrueDarts::DialogTrueDarts(const VContainer *data, VAbstractPattern *doc, 
     connect(ui->comboBoxSecondDartPoint, &QComboBox::currentTextChanged, this, &DialogTrueDarts::PointNameChanged);
     connect(ui->comboBoxThirdDartPoint, &QComboBox::currentTextChanged, this, &DialogTrueDarts::PointNameChanged);
 
-    vis = new VisToolTrueDarts(data);
+    vis = new VisToolTrueDarts(&this->data);
 
     ui->tabWidget->setCurrentIndex(0);
     SetTabStopDistance(ui->plainTextEditToolNotes);
@@ -216,7 +222,7 @@ void DialogTrueDarts::SetChildrenId(const quint32 &ch1, const quint32 &ch2)
 //---------------------------------------------------------------------------------------------------------------------
 void DialogTrueDarts::ChosenObject(quint32 id, const SceneObject &type)
 {
-    if (prepare == false && type == SceneObject::Point) // After first choose we ignore all objects
+    if (!prepare && type == SceneObject::Point) // After first choose we ignore all objects
     {
         auto *points = qobject_cast<VisToolTrueDarts *>(vis);
         SCASSERT(points != nullptr)
@@ -393,9 +399,8 @@ void DialogTrueDarts::CheckName(QLineEdit *edit, QLabel *labelEditNamePoint, con
     const QString name = edit->text();
     const QString secondName = secondPointName->text();
     if (QRegularExpression const rx(NameRegExp());
-        name.isEmpty() || secondName == name ||
-        (pointD1Name != name && pointD2Name != name && data->IsUnique(name) == false) ||
-        rx.match(name).hasMatch() == false)
+        name.isEmpty() || secondName == name || (pointD1Name != name && pointD2Name != name && !data.IsUnique(name))
+        || !rx.match(name).hasMatch())
     {
         flagName = false;
         ChangeColor(labelEditNamePoint, errorColor);

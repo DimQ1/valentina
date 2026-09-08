@@ -99,7 +99,7 @@ void InitLanguageList(QComboBox *combobox)
         locale.truncate(locale.lastIndexOf('.'_L1));  // "valentina_de_De"
         locale.remove(0, locale.indexOf('_'_L1) + 1); // "de_De"
 
-        if (locale.startsWith("ir"_L1) || !supportedLocales.contains(locale))
+        if (locale.startsWith("ir"_L1, Qt::CaseInsensitive) || !supportedLocales.contains(locale))
         {
             continue;
         }

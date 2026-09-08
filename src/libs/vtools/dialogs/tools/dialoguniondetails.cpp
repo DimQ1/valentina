@@ -36,6 +36,7 @@
 #include "../vpatterndb/vpiecenode.h"
 #include "dialogtool.h"
 #include "ui_dialoguniondetails.h"
+#include "../../visualization/path/vistooluniondetails.h"
 
 //---------------------------------------------------------------------------------------------------------------------
 /**
@@ -57,6 +58,8 @@ DialogUnionDetails::DialogUnionDetails(const VContainer *data, VAbstractPattern 
 {
     ui->setupUi(this);
     InitOkCancel(ui);
+
+    vis = new VisToolUnionDetails(&this->data);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -75,6 +78,12 @@ auto DialogUnionDetails::RetainPieces() const -> bool
 void DialogUnionDetails::CheckDependencyTreeComplete()
 {
     // does nothing
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void DialogUnionDetails::ShowVisualization()
+{
+    AddVisualization<VisToolUnionDetails>();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -98,6 +107,24 @@ void DialogUnionDetails::ChosenObject(quint32 id, const SceneObject &type)
         }
         ChoosedDetail(id, type, d2, indexD2);
     }
+
+    if (auto *toolVis = qobject_cast<VisToolUnionDetails *>(vis))
+    {
+        toolVis->SetD1Id(d1);
+        toolVis->SetD2Id(d2);
+        toolVis->SetP1Id(p1);
+        toolVis->SetIndexD1(numberD >= 1 ? indexD1 : -1);
+        toolVis->SetIndexD2(numberD >= 2 ? indexD2 : -1);
+
+        if (d1 != NULL_ID && (toolVis->scene() == nullptr))
+        {
+            toolVis->VisualMode(d1);
+        }
+        else
+        {
+            toolVis->RefreshGeometry();
+        }
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -113,7 +140,7 @@ auto DialogUnionDetails::CheckObject(const quint32 &id, const quint32 &idDetail)
     {
         return false;
     }
-    const VPiece det = data->GetPiece(idDetail);
+    const VPiece det = data.GetPiece(idDetail);
     return det.GetPath().Contains(id);
 }
 
@@ -125,7 +152,7 @@ auto DialogUnionDetails::CheckDetail(const quint32 &idDetail) const -> bool
         return false;
     }
 
-    const VPiece det = data->GetPiece(idDetail);
+    const VPiece det = data.GetPiece(idDetail);
     return det.GetPath().CountNodes() >= 3 && det.GetPath().ListNodePoint().size() >= 2;
 }
 
@@ -175,7 +202,7 @@ void DialogUnionDetails::ChoosedDetail(const quint32 &id, const SceneObject &typ
                 return;
             }
 
-            VPiece d = data->GetPiece(idDetail);
+            VPiece d = data.GetPiece(idDetail);
             if (d.GetPath().OnEdge(p1, id))
             {
                 p2 = id;

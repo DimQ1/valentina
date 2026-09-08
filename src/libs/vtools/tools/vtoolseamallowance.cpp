@@ -39,6 +39,7 @@
 #include "../undocommands/deletepiece.h"
 #include "../undocommands/movepiece.h"
 #include "../undocommands/savepieceoptions.h"
+#include "../undocommands/savepiecepathoptions.h"
 #include "../undocommands/togglepiecestate.h"
 #include "../vformat/vlabeltemplate.h"
 #include "../vgeometry/varc.h"
@@ -86,6 +87,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainterPath>
+#include <QThread>
 #include <QTimer>
 #include <QUuid>
 #include <QtConcurrent/QtConcurrentRun>
@@ -501,12 +503,30 @@ auto RenderMirrorLine(const VPiece &detail, const VContainer *data, bool combine
     path.lineTo(p2);
     return path;
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+void UpdatePathExcludeState(const VPiecePath &path)
+{
+    for (int i = 0; i < path.CountNodes(); ++i)
+    {
+        if (const VPieceNode &node = path.at(i); node.GetTypeTool() == Tool::NodePoint)
+        {
+            auto *tool = qobject_cast<VNodePoint *>(VAbstractPattern::getTool(node.GetId()));
+            SCASSERT(tool != nullptr);
+
+            tool->SetExluded(node.IsExcluded());
+            tool->setVisible(not node.IsExcluded()); // Hide excluded point
+        }
+    }
+}
 } // namespace
 
 //---------------------------------------------------------------------------------------------------------------------
 VToolSeamAllowance::~VToolSeamAllowance()
 {
+    qCDebug(vTool, "VToolSeamAllowance::~VToolSeamAllowance: id=%u destroying.", m_id);
     CancelLabelRendering();
+    qCDebug(vTool, "VToolSeamAllowance::~VToolSeamAllowance: id=%u destroyed.", m_id);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -557,7 +577,10 @@ auto VToolSeamAllowance::Create(const QPointer<DialogTool> &dialog, VMainGraphic
     if (piece != nullptr)
     {
         piece->m_dialog = dialog;
+        qCDebug(vTool, "VToolSeamAllowance::Create: id=%u refreshing geometry after creation from dialog.",
+                piece->m_id);
         piece->RefreshGeometry(true); // Refresh internal paths
+        qCDebug(vTool, "VToolSeamAllowance::Create: id=%u geometry refresh call returned.", piece->m_id);
     }
     return piece;
 }
@@ -630,7 +653,7 @@ auto VToolSeamAllowance::Duplicate(const QPointer<DialogTool> &dialog, VMainGrap
     initData.typeCreation = Source::FromGui;
     initData.drawName = doc->PieceDrawName(dialogTool->Duplicate());
 
-    VContainer toolData = VAbstractPattern::getTool(dialogTool->Duplicate())->getData();
+    VContainer toolData = VAbstractPattern::getTool(dialogTool->Duplicate())->GetDataCopy();
     initData.data = &toolData;
 
     VPiece detail = initData.data->GetPiece(dialogTool->Duplicate());
@@ -1082,11 +1105,14 @@ void VToolSeamAllowance::Move(qreal x, qreal y)
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSeamAllowance::Update(const VPiece &piece)
 {
+    qCDebug(vTool, "VToolSeamAllowance::Update: id=%u start.", m_id);
     setFlag(QGraphicsItem::ItemSendsGeometryChanges, false);
     VAbstractTool::data.UpdatePiece(m_id, piece);
     RefreshGeometry();
+    qCDebug(vTool, "VToolSeamAllowance::Update: id=%u geometry refreshed, updating scene rect.", m_id);
     VMainGraphicsView::NewSceneRect(m_sceneDetails, VAbstractValApplication::VApp()->getSceneView(), this);
     setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    qCDebug(vTool, "VToolSeamAllowance::Update: id=%u done.", m_id);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1127,6 +1153,7 @@ void VToolSeamAllowance::ConnectOutsideSignals()
     connect(doc, &VAbstractPattern::CheckLayout, this, &VToolSeamAllowance::UpdateDetailLabel);
     connect(doc, &VAbstractPattern::CheckLayout, this, &VToolSeamAllowance::UpdatePatternInfo);
     connect(doc, &VAbstractPattern::CheckLayout, this, &VToolSeamAllowance::UpdateGrainline);
+    connect(doc, &VAbstractPattern::CheckLayout, this, &VToolSeamAllowance::RefreshFoldLine);
 
     connect(m_sceneDetails, &VMainGraphicsScene::EnableToolMove, this, &VToolSeamAllowance::EnableToolMove);
     connect(m_sceneDetails, &VMainGraphicsScene::ItemByMousePress, this, &VToolSeamAllowance::ResetChildren);
@@ -1199,9 +1226,17 @@ void VToolSeamAllowance::AllowSelecting(bool enabled)
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSeamAllowance::ResetChildren(QGraphicsItem *pItem)
 {
-    const bool selected = isSelected();
     const VPiece detail = VAbstractTool::data.GetPiece(m_id);
     auto *pVGI = qgraphicsitem_cast<VTextGraphicsItem *>(pItem);
+    const auto *pGLI = qgraphicsitem_cast<VGrainlineItem *>(pItem);
+
+    // If the pressed item is one of this piece's labels or grainline, keep the piece selected
+    // so the child stays interactive. This used to be polled via IsIdle() inside paint(), which
+    // mutates selection state during paint and crashes on Windows under Qt 6.
+    const bool myChildPressed =
+        (pVGI != nullptr && (pVGI == m_dataLabel || pVGI == m_patternInfo)) || (pGLI != nullptr && pGLI == m_grainLine);
+    const bool selected = isSelected() || myChildPressed;
+
     if (pVGI != m_dataLabel && detail.GetPieceLabelData().IsEnabled())
     {
         m_dataLabel->Reset();
@@ -1211,8 +1246,7 @@ void VToolSeamAllowance::ResetChildren(QGraphicsItem *pItem)
         m_patternInfo->Reset();
     }
 
-    if (const auto *pGLI = qgraphicsitem_cast<VGrainlineItem *>(pItem);
-        pGLI != m_grainLine && detail.GetGrainlineGeometry().IsEnabled())
+    if (pGLI != m_grainLine && detail.GetGrainlineGeometry().IsEnabled())
     {
         m_grainLine->Reset();
     }
@@ -1266,11 +1300,19 @@ void VToolSeamAllowance::UpdateDetailLabel()
                 info.labelData = detail.GetPieceLabelData();
 
                 m_pieceLabelInfoStale = false;
+                qCDebug(vTool, "VToolSeamAllowance::UpdateDetailLabel: id=%u dispatching background label update.",
+                        m_id);
                 m_pieceUpdateInfoWatcher->setFuture(QtConcurrent::run(
                     [this, info, detail]()
                     {
+                        qCDebug(vTool,
+                                "VToolSeamAllowance::UpdateDetailLabel: id=%u background label update start on "
+                                "thread %p.",
+                                m_id, static_cast<void *>(QThread::currentThreadId()));
                         m_dataLabel->SetPieceName(detail.GetName());
                         m_dataLabel->UpdatePieceLabelData(info);
+                        qCDebug(vTool, "VToolSeamAllowance::UpdateDetailLabel: id=%u background label update done.",
+                                m_id);
                     }));
             }
         }
@@ -1306,11 +1348,19 @@ void VToolSeamAllowance::UpdatePatternInfo()
                 VPieceLabelInfo const info = VTextManager::PrepareLabelInfo(doc, getData(), false);
 
                 m_patternLabelInfoStale = false;
+                qCDebug(vTool, "VToolSeamAllowance::UpdatePatternInfo: id=%u dispatching background label update.",
+                        m_id);
                 m_patternUpdateInfoWatcher->setFuture(QtConcurrent::run(
                     [this, info, detail]()
                     {
+                        qCDebug(vTool,
+                                "VToolSeamAllowance::UpdatePatternInfo: id=%u background label update start on "
+                                "thread %p.",
+                                m_id, static_cast<void *>(QThread::currentThreadId()));
                         m_patternInfo->SetPieceName(detail.GetName());
                         m_patternInfo->UpdatePatternLabelData(info);
+                        qCDebug(vTool, "VToolSeamAllowance::UpdatePatternInfo: id=%u background label update done.",
+                                m_id);
                     }));
             }
         }
@@ -1528,6 +1578,16 @@ void VToolSeamAllowance::SaveRotateGrainline(qreal dRot, const QPointF &ptPos)
  */
 void VToolSeamAllowance::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+    // Do not mutate item state here (pens, brushes, selection). Since Qt 6 changing such state
+    // inside paint() crashes the paint pipeline on Windows. Scale/settings-dependent pens and
+    // brushes live in RefreshScale(); keeping the piece selected while one of its child labels
+    // is manipulated is handled in ResetChildren().
+    PaintWithFixItemHighlightSelected<QGraphicsPathItem>(this, painter, option, widget);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::RefreshScale()
+{
     QPen toolPen = pen();
     toolPen.setWidthF(ScaleWidth(VAbstractApplication::VApp()->Settings()->WidthHairLine(), SceneScale(scene())));
     toolPen.setColor(VSceneStylesheet::PatternPieceStyle().PieceColor());
@@ -1552,12 +1612,6 @@ void VToolSeamAllowance::paint(QPainter *painter, const QStyleOptionGraphicsItem
     {
         m_foldLineLabel->setBrush(Qt::SolidPattern);
     }
-
-    if ((not m_dataLabel->IsIdle() || not m_patternInfo->IsIdle() || not m_grainLine->IsIdle()) && not isSelected())
-    {
-        setSelected(true);
-    }
-    PaintWithFixItemHighlightSelected<QGraphicsPathItem>(this, painter, option, widget);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1585,6 +1639,20 @@ auto VToolSeamAllowance::shape() const -> QPainterPath
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSeamAllowance::CancelLabelRendering()
 {
+    {
+        const bool patternFutureRunning = not m_patternUpdateInfoWatcher->isFinished();
+        const bool pieceFutureRunning = not m_pieceUpdateInfoWatcher->isFinished();
+        if (patternFutureRunning || pieceFutureRunning)
+        {
+            qCDebug(vTool,
+                    "VToolSeamAllowance::CancelLabelRendering: id=%u waiting for in-flight background label update "
+                    "(pattern=%d, piece=%d).",
+                    m_id,
+                    patternFutureRunning,
+                    pieceFutureRunning);
+        }
+    }
+
     m_patternUpdateInfoWatcher->cancel();
     m_pieceUpdateInfoWatcher->cancel();
 
@@ -2034,19 +2102,7 @@ VToolSeamAllowance::VToolSeamAllowance(const VToolSeamAllowanceInitData &initDat
 void VToolSeamAllowance::UpdateExcludeState()
 {
     const VPiece detail = VAbstractTool::data.GetPiece(m_id);
-    const VPiecePath &path = detail.GetPath();
-    for (int i = 0; i < path.CountNodes(); ++i)
-    {
-        const VPieceNode &node = path.at(i);
-        if (node.GetTypeTool() == Tool::NodePoint)
-        {
-            auto *tool = qobject_cast<VNodePoint *>(VAbstractPattern::getTool(node.GetId()));
-            SCASSERT(tool != nullptr);
-
-            tool->SetExluded(node.IsExcluded());
-            tool->setVisible(not node.IsExcluded()); // Hide excluded point
-        }
-    }
+    UpdatePathExcludeState(detail.GetPath());
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2055,13 +2111,19 @@ void VToolSeamAllowance::UpdateInternalPaths()
     VPiece piece = VAbstractTool::data.GetPiece(m_id);
     piece.TestInternalPaths(&(VAbstractTool::data));
     const QVector<quint32> paths = piece.GetInternalPaths();
-    for (auto path : paths)
+    for (auto pathId : paths)
     {
         try
         {
-            if (auto *tool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(path)))
+            if (auto *tool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(pathId)))
             {
                 tool->RefreshGeometry();
+
+                const VPiecePath pathItem = VAbstractTool::data.GetPiecePath(pathId);
+                for (int i = 0; i < pathItem.CountNodes(); ++i)
+                {
+                    InitInternalNode(pathItem.at(i), this);
+                }
             }
         }
         catch (const VExceptionBadId &)
@@ -2074,72 +2136,120 @@ void VToolSeamAllowance::UpdateInternalPaths()
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSeamAllowance::RefreshGeometry(bool updateChildren)
 {
-    this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, false);
-
-    const VPiece detail = VAbstractTool::data.GetPiece(m_id);
-
-    VValentinaSettings  const*settings = VAbstractValApplication::VApp()->ValentinaSettings();
+    qCDebug(vTool, "VToolSeamAllowance::RefreshGeometry: id=%u start.", m_id);
+    const VValentinaSettings *settings = VAbstractValApplication::VApp()->ValentinaSettings();
     const bool combineTogether = settings->IsBoundaryTogetherWithNotches();
+    const bool pieceShowMainPath = VAbstractApplication::VApp()->Settings()->IsPieceShowMainPath();
 
-    QFuture<QPainterPath> const futurePath = QtConcurrent::run(
-        [this, detail, combineTogether]() { return RenderSeamPath(detail, combineTogether, getData()); });
+    ApplyPieceGeometry(ComputePieceGeometry(combineTogether, pieceShowMainPath), updateChildren);
+}
 
-    QFuture<QPainterPath> futurePassmarks;
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::PrepareRefreshGeometry(bool combineTogether, bool pieceShowMainPath)
+{
+    // Runs off the GUI thread (e.g. via QtConcurrent for several pieces at once). Must not touch any
+    // QGraphicsItem; only ComputePieceGeometry() work happens here. The result is applied later by
+    // ApplyBatchGeometry() on the GUI thread.
+    try
+    {
+        m_batchGeometry = ComputePieceGeometry(combineTogether, pieceShowMainPath);
+    }
+    catch (const VExceptionBadId &)
+    {
+        m_batchGeometry = VToolSeamAllowanceGeometry(); // valid stays false -> piece skipped on apply
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::ApplyBatchGeometry(bool updateChildren)
+{
+    if (m_batchGeometry.valid)
+    {
+        ApplyPieceGeometry(m_batchGeometry, updateChildren);
+    }
+    m_batchGeometry = VToolSeamAllowanceGeometry();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+auto VToolSeamAllowance::ComputePieceGeometry(bool combineTogether, bool pieceShowMainPath) const
+    -> VToolSeamAllowanceGeometry
+{
+    // Pure geometry computation: safe to run on a worker thread and concurrently for different
+    // pieces. It must not access any QGraphicsItem - everything GUI-related lives in
+    // ApplyPieceGeometry().
+    const VPiece detail = VAbstractTool::data.GetPiece(m_id);
+    const VContainer *containerData = getData();
+
+    VToolSeamAllowanceGeometry geom;
+    geom.combineTogether = combineTogether;
+    geom.pos = QPointF(detail.GetMx(), detail.GetMy());
+    geom.pieceName = detail.GetName();
+
+    geom.seamPath = RenderSeamPath(detail, combineTogether, containerData);
+
     if (!combineTogether)
     {
-        futurePassmarks = QtConcurrent::run([this, detail]() { return RenderPassmarks(detail, getData()); });
+        geom.passmarks = RenderPassmarks(detail, containerData);
     }
 
-    QFuture<VFoldLine> const futureFoldLine =
-        QtConcurrent::run([this, detail]() { return RenderFoldLine(detail, getData()); });
+    geom.foldLine = RenderFoldLine(detail, containerData);
+    geom.mirrorLine = RenderMirrorLine(detail, containerData, combineTogether);
 
-    QFuture<QPainterPath> const futureMirrorLine = QtConcurrent::run(
-        [this, detail, combineTogether]() { return RenderMirrorLine(detail, getData(), combineTogether); });
-
-    QFuture<QPainterPath> futureSeamAllowance;
-    QFuture<bool> futureSeamAllowanceValid;
-
-    if (detail.IsSeamAllowance() && not detail.IsSeamAllowanceBuiltIn())
+    geom.hasSeamAllowance = detail.IsSeamAllowance() && not detail.IsSeamAllowanceBuiltIn();
+    if (geom.hasSeamAllowance)
     {
-        futureSeamAllowance = QtConcurrent::run(
-            [this, detail, combineTogether]() { return RenderSeamAllowancePath(detail, combineTogether, getData()); });
-        futureSeamAllowanceValid =
-            QtConcurrent::run([this, detail]() { return detail.IsSeamAllowanceValid(getData()); });
+        geom.seamAllowance = RenderSeamAllowancePath(detail, combineTogether, containerData);
+        geom.seamAllowanceValid = detail.IsSeamAllowanceValid(containerData);
     }
 
-    this->setPos(detail.GetMx(), detail.GetMy());
+    geom.showMainPath = pieceShowMainPath || not detail.IsHideMainPath() || not detail.IsSeamAllowance() ||
+                        detail.IsSeamAllowanceBuiltIn();
+
+    geom.placeLabels = detail.PlaceLabelPath(containerData);
+
+    geom.valid = true;
+    return geom;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::ApplyPieceGeometry(const VToolSeamAllowanceGeometry &geom, bool updateChildren)
+{
+    // Applies a previously computed geometry snapshot to the scene items. Must run on the GUI thread.
+    this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, false);
+
+    this->setPos(geom.pos);
 
     QPainterPath path;
 
-    if (VAbstractApplication::VApp()->Settings()->IsPieceShowMainPath() || not detail.IsHideMainPath() ||
-        not detail.IsSeamAllowance() || detail.IsSeamAllowanceBuiltIn())
+    if (geom.showMainPath)
     {
         m_mainPath = QPainterPath();
         m_seamAllowance->setBrush(QBrush(VSceneStylesheet::PatternPieceStyle().PieceColor(), Qt::Dense7Pattern));
-        path = futurePath.result();
+        path = geom.seamPath;
     }
     else
     {
         m_seamAllowance->setBrush(QBrush(Qt::NoBrush)); // Disable if the main path was hidden
         // need for returning a bounding rect when main path is not visible
-        m_mainPath = futurePath.result();
+        m_mainPath = geom.seamPath;
         path = QPainterPath();
     }
 
     this->setPath(path);
 
-    m_placeLabels->setPath(detail.PlaceLabelPath(this->getData()));
+    m_placeLabels->setPath(geom.placeLabels);
 
-    if (detail.IsSeamAllowance() && not detail.IsSeamAllowanceBuiltIn())
+    if (geom.hasSeamAllowance)
     {
-        if (not futureSeamAllowanceValid.result())
+        if (not geom.seamAllowanceValid)
         {
-            const QString errorMsg = QObject::tr("Piece '%1'. Seam allowance is not valid.").arg(detail.GetName());
+            qCDebug(vTool, "VToolSeamAllowance::RefreshGeometry: id=%u seam allowance is not valid.", m_id);
+            const QString errorMsg = QObject::tr("Piece '%1'. Seam allowance is not valid.").arg(geom.pieceName);
             VAbstractApplication::VApp()->IsPedantic()
                 ? throw VException(errorMsg)
                 : qWarning() << VAbstractValApplication::warningMessageSignature + errorMsg;
         }
-        path.addPath(futureSeamAllowance.result());
+        path.addPath(geom.seamAllowance);
         path.setFillRule(Qt::OddEvenFill);
         m_seamAllowance->setPath(path);
 
@@ -2152,28 +2262,14 @@ void VToolSeamAllowance::RefreshGeometry(bool updateChildren)
         m_pieceBoundingRect = m_mainPath.controlPointRect();
     }
 
-    m_mirrorLine->setPath(futureMirrorLine.result());
+    m_mirrorLine->setPath(geom.mirrorLine);
 
-    UpdateFoldLine(futureFoldLine.result());
+    UpdateFoldLine(geom.foldLine);
 
     if (VAbstractApplication::VApp()->IsAppInGUIMode())
     {
-        QTimer::singleShot(100ms,
-                           Qt::CoarseTimer,
-                           this,
-                           [this, updateChildren]() -> void
-                           {
-                               this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, false);
-                               UpdateDetailLabel();
-                               UpdatePatternInfo();
-                               UpdateGrainline();
-                               UpdateExcludeState();
-                               if (updateChildren)
-                               {
-                                   UpdateInternalPaths();
-                               }
-                               this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
-                           });
+        QTimer::singleShot(100ms, Qt::CoarseTimer, this,
+                           [this, updateChildren]() -> void { DeferredLabelGrainlineUpdate(updateChildren); });
     }
     else
     {
@@ -2187,12 +2283,32 @@ void VToolSeamAllowance::RefreshGeometry(bool updateChildren)
         }
     }
 
-    m_passmarks->setPath(!combineTogether ? futurePassmarks.result() : QPainterPath());
+    m_passmarks->setPath(!geom.combineTogether ? geom.passmarks : QPainterPath());
+
+    RefreshScale();
 
     this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
 
     // Now we can start checking validity of the grainline
     m_geometryIsReady = true;
+    qCDebug(vTool, "VToolSeamAllowance::RefreshGeometry: id=%u synchronous part done.", m_id);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::DeferredLabelGrainlineUpdate(bool updateChildren)
+{
+    qCDebug(vTool, "VToolSeamAllowance::RefreshGeometry: id=%u deferred label/grainline update starting.", m_id);
+    this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, false);
+    UpdateDetailLabel();
+    UpdatePatternInfo();
+    UpdateGrainline();
+    UpdateExcludeState();
+    if (updateChildren)
+    {
+        UpdateInternalPaths();
+    }
+    this->setFlag(QGraphicsItem::ItemSendsGeometryChanges, true);
+    qCDebug(vTool, "VToolSeamAllowance::RefreshGeometry: id=%u deferred label/grainline update done.", m_id);
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2238,6 +2354,7 @@ void VToolSeamAllowance::SaveDialogChange(const QString &undoText)
 //---------------------------------------------------------------------------------------------------------------------
 void VToolSeamAllowance::ShowOptions()
 {
+    qCDebug(vTool, "Show options for tool id=%u (%s).", m_id, qUtf8Printable(getTagName()));
     QPointer<DialogSeamAllowance> const dialog =
         new DialogSeamAllowance(getData(), doc, m_id, VAbstractValApplication::VApp()->getMainWindow());
     dialog->EnableApply(true);
@@ -2245,6 +2362,7 @@ void VToolSeamAllowance::ShowOptions()
     m_dialog->setModal(true);
     connect(m_dialog.data(), &DialogTool::DialogClosed, this, &VToolSeamAllowance::FullUpdateFromGuiOk);
     connect(m_dialog.data(), &DialogTool::DialogApplied, this, &VToolSeamAllowance::FullUpdateFromGuiApply);
+    BlockUndoRedoWhileDialogOpen();
     SetDialog();
     m_dialog->show();
 }
@@ -2283,7 +2401,7 @@ void VToolSeamAllowance::ToggleForceFlipping(bool checked)
 void VToolSeamAllowance::ToggleShowFullPiece(bool checked)
 {
     auto *toggleShowFullPiece = new class ToggleShowFullPiece(m_id, checked, &(VAbstractTool::data), doc);
-    connect(toggleShowFullPiece, &ToggleShowFullPiece::Toggled, this, [this]() { RefreshGeometry(true); });
+    connect(toggleShowFullPiece, &ToggleShowFullPiece::Toggled, this, [this]() -> void { RefreshGeometry(true); });
     VAbstractApplication::VApp()->getUndoStack()->push(toggleShowFullPiece);
 }
 
@@ -2297,18 +2415,38 @@ void VToolSeamAllowance::DeleteFromMenu()
 void VToolSeamAllowance::ToggleExcludeState(quint32 id)
 {
     const VPiece oldDet = VAbstractTool::data.GetPiece(m_id);
-    VPiece newDet = oldDet;
 
-    for (int i = 0; i < oldDet.GetPath().CountNodes(); ++i)
     {
-        VPieceNode node = oldDet.GetPath().at(i);
-        if (node.GetId() == id && node.GetTypeTool() == Tool::NodePoint)
+        VPiece newDet = oldDet;
+        for (int i = 0; i < oldDet.GetPath().CountNodes(); ++i)
         {
-            node.SetExcluded(not node.IsExcluded());
-            newDet.GetPath()[i] = node;
+            if (VPieceNode node = oldDet.GetPath().at(i); node.GetId() == id && node.GetTypeTool() == Tool::NodePoint)
+            {
+                node.SetExcluded(!node.IsExcluded());
+                newDet.GetPath()[i] = node;
 
-            VAbstractApplication::VApp()->getUndoStack()->push(new SavePieceOptions(oldDet, newDet, doc, m_id));
-            return;
+                VAbstractApplication::VApp()->getUndoStack()->push(new SavePieceOptions(oldDet, newDet, doc, m_id));
+                return;
+            }
+        }
+    }
+
+    const QVector<quint32> paths = oldDet.GetInternalPaths();
+    for (auto pathId : paths)
+    {
+        const VPiecePath oldPath = VAbstractTool::data.GetPiecePath(pathId);
+        VPiecePath newPath = oldPath;
+        for (int i = 0; i < newPath.CountNodes(); ++i)
+        {
+            if (VPieceNode node = newPath.at(i); node.GetId() == id && node.GetTypeTool() == Tool::NodePoint)
+            {
+                node.SetExcluded(!node.IsExcluded());
+                newPath[i] = node;
+
+                VAbstractApplication::VApp()->getUndoStack()->push(
+                    new SavePiecePathOptions(m_id, oldPath, newPath, doc, pathId));
+                return;
+            }
         }
     }
 }
@@ -2648,7 +2786,7 @@ void VToolSeamAllowance::InitNode(const VPieceNode &node, VMainGraphicsScene *sc
 
     switch (node.GetTypeTool())
     {
-        case (Tool::NodePoint):
+        case Tool::NodePoint:
         {
             auto *tool = qobject_cast<VNodePoint *>(VAbstractPattern::getTool(node.GetId()));
             SCASSERT(tool != nullptr);
@@ -2687,10 +2825,77 @@ void VToolSeamAllowance::InitNode(const VPieceNode &node, VMainGraphicsScene *sc
             tool->setVisible(not node.IsExcluded()); // Hide excluded point
             break;
         }
-        case (Tool::NodeArc):
-        case (Tool::NodeElArc):
-        case (Tool::NodeSpline):
-        case (Tool::NodeSplinePath):
+        case Tool::NodeArc:
+        case Tool::NodeElArc:
+        case Tool::NodeSpline:
+        case Tool::NodeSplinePath:
+            // Do nothing
+            break;
+        default:
+            qDebug() << "Get wrong tool type. Ignore.";
+            break;
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::InitInternalNode(const VPieceNode &node, VToolSeamAllowance *parent)
+{
+    SCASSERT(parent != nullptr)
+
+    switch (node.GetTypeTool())
+    {
+        case Tool::NodePoint:
+        {
+            auto *tool = qobject_cast<VNodePoint *>(VAbstractPattern::getTool(node.GetId()));
+            SCASSERT(tool != nullptr);
+
+            if (tool->parent() != parent)
+            {
+                connect(tool, &VNodePoint::ShowOptions, parent, &VToolSeamAllowance::ShowOptions, Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ToggleInLayout,
+                        parent,
+                        &VToolSeamAllowance::ToggleInLayout,
+                        Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ToggleForbidFlipping,
+                        parent,
+                        &VToolSeamAllowance::ToggleForbidFlipping,
+                        Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ToggleForceFlipping,
+                        parent,
+                        &VToolSeamAllowance::ToggleForceFlipping,
+                        Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ToggleShowFullPiece,
+                        parent,
+                        &VToolSeamAllowance::ToggleShowFullPiece,
+                        Qt::UniqueConnection);
+                connect(tool, &VNodePoint::Delete, parent, &VToolSeamAllowance::DeleteFromMenu, Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ResetPieceLabelTemplate,
+                        parent,
+                        &VToolSeamAllowance::ResetPieceLabelTemplate,
+                        Qt::UniqueConnection);
+                connect(tool,
+                        &VNodePoint::ToggleExcludeState,
+                        parent,
+                        &VToolSeamAllowance::ToggleExcludeState,
+                        Qt::UniqueConnection);
+
+                tool->setParentItem(parent);
+                tool->SetParentType(ParentType::Item);
+                tool->SetExluded(node.IsExcluded());
+            }
+            tool->SetInternalPathNode(true);
+            tool->setVisible(not node.IsExcluded()); // Hide excluded point
+            break;
+        }
+        case Tool::NodeArc:
+        case Tool::NodeElArc:
+        case Tool::NodeSpline:
+        case Tool::NodeSplinePath:
             // Do nothing
             break;
         default:
@@ -2703,9 +2908,9 @@ void VToolSeamAllowance::InitNode(const VPieceNode &node, VMainGraphicsScene *sc
 void VToolSeamAllowance::InitInternalPaths(const VPiece &detail)
 {
     const QVector<quint32> paths = detail.GetInternalPaths();
-    for (auto path : paths)
+    for (auto pathId : paths)
     {
-        auto *tool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(path));
+        auto *tool = qobject_cast<VToolPiecePath *>(VAbstractPattern::getTool(pathId));
         SCASSERT(tool != nullptr);
 
         if (tool->parent() != this)
@@ -2714,6 +2919,12 @@ void VToolSeamAllowance::InitInternalPaths(const VPiece &detail)
             tool->SetParentType(ParentType::Item);
         }
         tool->show();
+
+        const VPiecePath pathItem = VAbstractTool::data.GetPiecePath(pathId);
+        for (int i = 0; i < pathItem.CountNodes(); ++i)
+        {
+            InitInternalNode(pathItem.at(i), this);
+        }
     }
 }
 
@@ -2880,26 +3091,26 @@ auto VToolSeamAllowance::DuplicateNode(const VPieceNode &node, const VToolSeamAl
 
     switch (node.GetTypeTool())
     {
-        case (Tool::NodePoint):
+        case Tool::NodePoint:
         {
             auto point = QSharedPointer<VPointF>(new VPointF(*qSharedPointerDynamicCast<VPointF>(gobj).data()));
             initNodeData.id = VAbstractTool::CreateNodePoint(initData.data, gobj->getIdObject(), point);
             VNodePoint::Create(initNodeData);
             break;
         }
-        case (Tool::NodeArc):
+        case Tool::NodeArc:
             initNodeData.id = VAbstractTool::CreateNode<VArc>(initData.data, gobj->getIdObject());
             VNodeArc::Create(initNodeData);
             break;
-        case (Tool::NodeElArc):
+        case Tool::NodeElArc:
             initNodeData.id = VAbstractTool::CreateNode<VEllipticalArc>(initData.data, gobj->getIdObject());
             VNodeEllipticalArc::Create(initNodeData);
             break;
-        case (Tool::NodeSpline):
+        case Tool::NodeSpline:
             initNodeData.id = VAbstractTool::CreateNodeSpline(initData.data, gobj->getIdObject());
             VNodeSpline::Create(initNodeData);
             break;
-        case (Tool::NodeSplinePath):
+        case Tool::NodeSplinePath:
             initNodeData.id = VAbstractTool::CreateNodeSplinePath(initData.data, gobj->getIdObject());
             VNodeSplinePath::Create(initNodeData);
             break;
@@ -3002,6 +3213,18 @@ auto VToolSeamAllowance::DuplicatePlaceLabels(const QVector<quint32> &placeLabel
         newPlaceLabels.append(initNodeData.id);
     }
     return newPlaceLabels;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+void VToolSeamAllowance::RefreshFoldLine()
+{
+    const VPiece detail = VAbstractTool::data.GetPiece(m_id);
+    UpdateFoldLine(RenderFoldLine(detail, getData()));
+
+    // m_foldLineLabel's brush (filled glyph vs. stroke-only path) depends on the same
+    // single-stroke/single-line font settings and is otherwise only refreshed by the full
+    // geometry pipeline.
+    RefreshScale();
 }
 
 //---------------------------------------------------------------------------------------------------------------------

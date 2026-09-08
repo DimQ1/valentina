@@ -51,6 +51,7 @@ public:
     ~DialogPreferences() override;
 signals:
     void UpdateProperties();
+    void RequestFullParse();
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -64,9 +65,9 @@ private:
     Q_DISABLE_COPY_MOVE(DialogPreferences) // NOLINT
     Ui::DialogPreferences *ui;
     bool m_isInitialized{false};
-    PreferencesConfigurationPage *m_configurePage;
-    PreferencesPatternPage *m_patternPage;
-    PreferencesPathPage *m_pathPage;
+    PreferencesConfigurationPage *m_configurePage{nullptr};
+    PreferencesPatternPage *m_patternPage{nullptr};
+    PreferencesPathPage *m_pathPage{nullptr};
 
     void Apply();
     void Ok();

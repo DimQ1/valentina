@@ -625,73 +625,11 @@ void VAbstractApplication::CacheTextCodec(QStringConverter::Encoding encoding, V
 //---------------------------------------------------------------------------------------------------------------------
 void VAbstractApplication::CheckSystemLocale()
 {
-    if (const QString defLocale = QLocale::system().name();
-        defLocale.startsWith("ru"_L1, Qt::CaseInsensitive) || defLocale.startsWith("ir"_L1, Qt::CaseInsensitive))
-    {
-        QCoreApplication::exit();
-        return;
-    }
-
-    auto CheckLanguage = [](QStandardPaths::StandardLocation type, const QStringList &test) -> int
-    {
-        const QString path = QStandardPaths::writableLocation(type);
-        bool const res = std::any_of(test.begin(),
-                                     test.end(),
-                                     [path](const QString &t) -> bool { return path.contains(t); });
-        return static_cast<int>(res);
-    };
-
-    int match = 0;
-    match += CheckLanguage(QStandardPaths::DesktopLocation, {"Рабочий стол"});
-    match += CheckLanguage(QStandardPaths::DocumentsLocation, {"Мои документы", "Документы"});
-    match += CheckLanguage(QStandardPaths::MusicLocation, {"Моя музыка", "Музыка"});
-    match += CheckLanguage(QStandardPaths::MoviesLocation, {"Мои видео", "Видео"});
-    match += CheckLanguage(QStandardPaths::PicturesLocation, {"Мои рисунки", "Изображения", "Картинки"});
-    match += CheckLanguage(QStandardPaths::DownloadLocation, {"Мои документы", "Загрузки"});
-
-    if (match >= 4)
-    {
-        QCoreApplication::exit();
-        return;
-    }
-
-    QString const timeZoneId = QString::fromUtf8(QTimeZone::systemTimeZone().id());
-    QSet<QString> const timeZones{"Asia/Anadyr",
-                                  "Asia/Barnaul",
-                                  "Asia/Chita",
-                                  "Asia/Irkutsk",
-                                  "Asia/Kamchatka",
-                                  "Asia/Khandyga",
-                                  "Asia/Krasnoyarsk",
-                                  "Asia/Magadan",
-                                  "Asia/Novokuznetsk",
-                                  "Asia/Novosibirsk",
-                                  "Asia/Omsk",
-                                  "Asia/Sakhalin",
-                                  "Asia/Srednekolymsk",
-                                  "Asia/Tomsk",
-                                  "Asia/Ust-Nera",
-                                  "Asia/Vladivostok",
-                                  "Asia/Yakutsk",
-                                  "Asia/Yekaterinburg",
-                                  "Europe/Astrakhan",
-                                  "Europe/Kaliningrad",
-                                  "Europe/Kirov",
-                                  "Europe/Moscow",
-                                  "Europe/Samara",
-                                  "Europe/Saratov",
-                                  "Europe/Simferopol",
-                                  "Europe/Ulyanovsk",
-                                  "Europe/Volgograd",
-                                  "W-SU",
-                                  "Europe/Minsk",
-                                  "Asia/Tehran",
-                                  "Iran"};
-    if (timeZones.contains(timeZoneId))
-    {
-        QCoreApplication::exit();
-        return;
-    }
+    // Local build change. Upstream exits the application when the system locale is Russian or Iranian, when at
+    // least four shell folders carry Russian names, or when the system time zone is one of the Russian, Belarusian
+    // or Iranian ones. That makes the official binary close itself on the machine this port is validated against,
+    // so the guard is disabled in this build. The function is deliberately kept as a no-op to leave the three
+    // callers (Valentina, Tape, Puzzle) and the header untouched.
 }
 
 //---------------------------------------------------------------------------------------------------------------------

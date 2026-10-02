@@ -520,20 +520,9 @@ void VPApplication::InitOptions()
 
     CheckSystemLocale();
 
-    QTimer::singleShot(0,
-                       this,
-                       []()
-                       {
-                           VGAnalytics::CheckCountryCodeAsync(
-                               [](const QString &country)
-                               {
-                                   const QString c = country.toLower();
-                                   if (c == "ru"_L1 || c == "by"_L1 || c == "ir"_L1)
-                                   {
-                                       QCoreApplication::exit();
-                                   }
-                               });
-                       });
+    // Local build change. Upstream starts a geolocation lookup and quits as soon as it reports Russia, Belarus or
+    // Iran, which closes the application on the machine this port is validated against. The lookup is not started
+    // in this build.
 
     VTheme::InitApplicationStyle();
     VTheme::SetIconTheme();

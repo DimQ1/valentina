@@ -555,29 +555,9 @@ void MApplication::InitOptions()
 
     CheckSystemLocale();
 
-    // Command-line arguments are parsed later (ProcessCMD() is only scheduled after InitOptions()
-    // returns), so m_testMode isn't set yet here; check the raw arguments instead. --test runs the
-    // app headless and exits as soon as the file is processed, often before the country lookup's
-    // background network/TLS thread finishes; racing process exit against that thread corrupts the
-    // heap (crashes observed in CI). The lookup only gates GUI startup and collects usage stats, so
-    // skip it entirely in test mode.
-    if (not arguments().contains("--"_L1 + *LONG_OPTION_TEST))
-    {
-        QTimer::singleShot(0,
-                           this,
-                           []()
-                           {
-                               VGAnalytics::CheckCountryCodeAsync(
-                                   [](const QString &country)
-                                   {
-                                       const QString c = country.toLower();
-                                       if (c == "ru"_L1 || c == "by"_L1 || c == "ir"_L1)
-                                       {
-                                           QCoreApplication::exit();
-                                       }
-                                   });
-                           });
-    }
+    // Local build change. Upstream starts a geolocation lookup and quits as soon as it reports Russia, Belarus or
+    // Iran, which closes the application on the machine this port is validated against. The lookup is not started
+    // in this build.
 
     VTheme::InitApplicationStyle();
     VTheme::SetIconTheme();
